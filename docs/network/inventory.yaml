@@ -1,0 +1,161 @@
+# tower_cloud / network inventory
+# Machine-readable source of truth. Keep this file in sync with reality.
+# Re-generate/verify with: scripts/recon.sh
+# Last verified: 2026-10-12 (see CHANGELOG.md)
+
+meta:
+  site: home
+  documented_at: "2026-10-12"
+  observed_from: archasus (192.168.1.204)
+  method: passive discovery + read-only scans (see scripts/recon.sh)
+  secrets: none stored here — credentials live outside the repo
+
+subnets:
+  - id: lan
+    cidr: 192.168.1.0/24
+    purpose: main LAN — workstations, phones, IoT
+    gateway: 192.168.1.1
+    dhcp: true
+    dhcp_server: 192.168.1.1
+  - id: servers
+    cidr: 192.168.30.0/24
+    purpose: server segment — NAS + hypervisor
+    gateway: 192.168.30.1
+    dhcp: false            # servers use static addressing (observed)
+    routed_by: 192.168.1.1 # routed, not bridged, from LAN
+  - id: lan_v6_ula
+    cidr: fde7:823d:5636::/64
+    purpose: IPv6 ULA advertised by the router via RA
+    gateway: fde7:823d:5636::1
+
+hosts:
+  - id: router
+    role: gateway-router
+    status: up
+    ips:
+      lan: 192.168.1.1
+      servers: 192.168.30.1
+    mac: "c0:4a:00:fb:ff:71"
+    hardware_oui: "TP-Link Technologies Co.,Ltd"
+    os: OpenWrt (LuCI)
+    os_version: "23.093.42704"
+    notes: >
+      OpenWrt on TP-Link hardware. Web UI (LuCI) on :80/:443, dropbear SSH on :22.
+      Routes between 192.168.1.0/24 and 192.168.30.0/24 and does DHCP/DNS for the LAN.
+      IPv6 ULA RA (fde7:823d:5636::/64).
+    services:
+      - {port: 22, proto: tcp, service: dropbear-ssh}
+      - {port: 80, proto: tcp, service: luci-http}
+      - {port: 443, proto: tcp, service: luci-https}
+    access: "ssh root@192.168.1.1 / http://192.168.1.1  (credentials: external)"
+
+  - id: archasus
+    role: workstation
+    status: up
+    ips:
+      lan: [192.168.1.204, 192.168.1.205]   # TWO IPv4 leases on one NIC — anomaly, see CHANGELOG
+    mac: "fc:9d:05:72:97:da"
+    os: Arch Linux (kernel 7.2.7-arch1-1)
+    hardware: MSI MS-7D98, 1 GbE (enp3s0)
+    notes: >
+      This recon host. Docker host (containers: alisa-web, openwebui, postgres, ...).
+      NFS client: mounts tower:/srv/nfs/datasets at /mnt/datasets.
+      Local dev proxies: hiddify (SOCKS), ssh -D dynamic tunnel, ollama via ssh forward.
+    services_localhost_only: [1080, 12334, 12336, 12337, 30000, 63342]
+    access: "local"
+
+  - id: tower
+    role: nas-media-server
+    status: up
+    hostname: tower.lan
+    ips:
+      servers: 192.168.30.200
+    mac: null
+    os: Linux (nginx + docker stack inferred)
+    notes: >
+      Primary storage / media / object-storage server. Jellyfin 10.11.6 (ServerName "tower"),
+      MinIO S3, Transmission, MiniDLNA, SMB + NFS exports. See services below.
+      Historically was 192.168.1.200 before the move to the .30 subnet.
+    services:
+      - {port: 22, proto: tcp, service: ssh}
+      - {port: 80, proto: tcp, service: "nginx 1.28.2 (reverse proxy -> Jellyfin /web/)"}
+      - {port: 111, proto: tcp, service: rpcbind}
+      - {port: 139, proto: tcp, service: smb}
+      - {port: 445, proto: tcp, service: smb}
+      - {port: 2049, proto: tcp, service: nfs}
+      - {port: 8096, proto: tcp, service: "Jellyfin 10.11.6"}
+      - {port: 8200, proto: tcp, service: "MiniDLNA 1.3.3"}
+      - {port: 9000, proto: tcp, service: "MinIO S3 API"}
+      - {port: 9001, proto: tcp, service: "MinIO Console"}
+      - {port: 9091, proto: tcp, service: "Transmission RPC"}
+      - {port: 20048, proto: tcp, service: nfs-mountd}
+      - {port: 45355, proto: tcp, service: nfs-nlockmgr}
+      - {port: 52619, proto: tcp, service: nfs-status}
+      - {port: 64657, proto: tcp, service: nfs-(dynamic)}
+    nfs_exports:
+      - {path: /srv/nfs/datasets, allow: 192.168.1.0/24}
+    access: "ssh / http://tower.lan / http://192.168.30.200"
+
+  - id: proxmox
+    role: hypervisor
+    status: up
+    hostname: pve.lan
+    ips:
+      servers: 192.168.30.201
+    os: Proxmox VE (pve)
+    notes: >
+      Proxmox VE host. Web UI on :8006, SPICE proxy on :3128.
+      VMs/CTs not enumerated (requires auth).
+    services:
+      - {port: 22, proto: tcp, service: ssh}
+      - {port: 111, proto: tcp, service: rpcbind}
+      - {port: 3128, proto: tcp, service: "spiceproxy"}
+      - {port: 8006, proto: tcp, service: "Proxmox VE web UI"}
+    access: "https://192.168.30.201:8006 (credentials: external)"
+
+  - id: dreame-vacuum
+    role: iot-vacuum
+    status: up
+    hostname: dreame_vacuum_p2114o.lan
+    ips:
+      lan: 192.168.1.207
+    mac: "5c:c5:63:e8:5b:aa"
+    hardware_oui: "Hunan FN-Link Technology Limited (WiFi module)"
+    notes: "Dreame robot vacuum. No open TCP ports."
+    access: "n/a"
+
+  - id: pixel-10
+    role: client-phone
+    status: up
+    hostname: Pixel-10.lan
+    ips:
+      lan: 192.168.1.214
+    mac: "02:76:37:23:21:13"   # locally administered (MAC randomization)
+    notes: "Google Pixel phone. Ports 51692/64660 are transient app ports."
+    access: "n/a"
+
+  - id: keenetic-omni-2
+    role: router-spare
+    status: offline
+    ips: {}
+    hardware: Keenetic Omni 2 (KN-1410)
+    notes: >
+      Spare router, currently offline / not on the network. Intended role unknown
+      (AP? backup WAN? separate LAN? OpenWrt target?). See open_questions.
+
+legacy:
+  # Addresses seen in shell history / known_hosts but NOT reachable now.
+  # The servers appear to have been moved from 192.168.1.0/24 to 192.168.30.0/24.
+  - {ip: 192.168.1.200, note: "old tower address"}
+  - {ip: 192.168.1.201, note: "old? (ssh'd previously)"}
+  - {ip: 192.168.1.202, note: "biqu@ — 3D printer / SBC, offline"}
+  - {ip: 192.168.1.203, note: "biqu@ — 3D printer / SBC, offline"}
+  - {ip: 192.168.1.161, note: "biqu@ — 3D printer / SBC, offline"}
+
+open_questions:
+  - "Confirm the two 'servers' are tower (192.168.30.200) and proxmox (192.168.30.201)."
+  - "What is the goal of the tower_cloud project? (roles to add/migrate)"
+  - "Intended role of the offline Keenetic Omni 2 (AP / backup WAN / separate LAN / OpenWrt)?"
+  - "Why does archasus hold two IPv4 leases (.204 and .205) on one NIC?"
+  - "What runs on the biqu* hosts (.161/.202/.203)? 3D printer controllers?"
+  - "Should 192.168.30.0/24 become a proper VLAN, and is it firewalled from the LAN?"
