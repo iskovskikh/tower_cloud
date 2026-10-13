@@ -18,3 +18,9 @@ ansible/inventory/hosts.local.yml
 .env
 *.pem
 *.key
+
+# --- editors / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
