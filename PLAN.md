@@ -94,7 +94,11 @@ _Updated: 2026-10-13_
       hostNetwork DaemonSet (no cloud LB): any node IP `:80` (`:443` free) is an
       entry point, reachable from the LAN through the router. Class `nginx`
       is the default. Validated with a whoami Ingress from `archasus`.
-- [ ] TLS / cert-manager, DNS names
+- [x] **TLS via cert-manager v1.21.2** (Flux) + internal **CA ClusterIssuer**
+      (`tower-ca`, self-signed bootstrap). Works for LAN-only names (no public
+      ACME). Vault UI exposed at `https://vault.local` (`vault-tls`). Import the
+      `tower-ca` cert to trust it.
+- [ ] DNS names (router dnsmasq or /etc/hosts), more Ingresses
 - [ ] media stack (Jellyfin, Transmission) consumed from tower
 - [ ] databases (Postgres) on RWO block
 
@@ -106,6 +110,11 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **TLS live (cert-manager).** Deployed **cert-manager v1.21.2** via
+  Flux; internal CA chain (`selfsigned` → `Certificate tower-ca` → ClusterIssuer
+  `tower-ca`). Vault UI now served at **`https://vault.local`** (Ingress +
+  cert-manager annotation); verified with `curl --cacert tower-ca`. No public
+  ACME (services are LAN-only). TODO: DNS (router or hosts).
 - 2026-10-13 — **Object storage live: Garage (replaces MinIO).** MinIO container
   images are now gated (`unauthorized` in docker.io/quay.io), so deployed
   **Garage v2.4.1** instead: single node on a dedicated tower block LUN (lun 2),

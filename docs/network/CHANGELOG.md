@@ -4,6 +4,29 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — TLS: cert-manager + internal CA
+
+Executed from `archasus` (Flux).
+
+- Deployed **cert-manager v1.21.2** (chart `v1.21.2`) via Flux in namespace
+  `cert-manager` (HelmRepository `charts.jetstack.io`); CRDs via `installCRDs`.
+- Internal **CA chain** (`k8s/apps/ingress/cert-manager/clusterissuers.yaml`):
+  ClusterIssuer `selfsigned` → `Certificate/tower-ca` (CN `tower-cloud-ca`,
+  ECDSA P-256, 10 y) → ClusterIssuer `tower-ca`. No public ACME — the services
+  are LAN-only.
+- Exposed **Vault UI over TLS**: Ingress `vault/vault` (`vault.local` → vault:8200)
+  annotated `cert-manager.io/cluster-issuer: tower-ca`; cert in Secret
+  `vault/vault-tls`. Verified from `archasus`:
+  `curl --resolve vault.local:443:<node> --cacert tower-ca https://vault.local/v1/sys/health`
+  → OK.
+- To trust: import the `tower-ca` `ca.crt` into clients
+  (`kubectl -n cert-manager get secret tower-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`).
+  To resolve names, add `<node-ip> vault.local` to hosts / router DNS.
+
+Sources: `kubectl`, `flux`, `openssl`, `curl`.
+
+---
+
 ## 2026-10-13 — Object storage: Garage (MinIO substituted)
 
 Executed from `archasus` (Flux + ESO + Vault).
