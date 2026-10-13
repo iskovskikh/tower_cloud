@@ -1,7 +1,7 @@
 # Bootstrap realm "tower" imported by Keycloak on first start (--import-realm).
 #
-# No secrets live here: Keycloak substitutes ${env.*} from the container
-# environment (fed by the keycloak-secrets ExternalSecret). NOTE: import only
+# No secrets live here: Keycloak substitutes ${VAR} placeholders from the
+# container environment (fed by the keycloak-secrets ExternalSecret). NOTE: import only
 # applies to realms that do not exist yet — later realm changes must be applied
 # through the admin console/API (realm-as-code is a follow-up).
 apiVersion: v1
@@ -41,7 +41,7 @@ data:
           "enabled": true,
           "protocol": "openid-connect",
           "publicClient": false,
-          "secret": "${env.VAULT_CLIENT_SECRET}",
+          "secret": "${VAULT_CLIENT_SECRET}",
           "standardFlowEnabled": true,
           "directAccessGrantsEnabled": false,
           "serviceAccountsEnabled": false,
@@ -72,7 +72,7 @@ data:
           "enabled": true,
           "protocol": "openid-connect",
           "publicClient": false,
-          "secret": "${env.OAUTH2_PROXY_CLIENT_SECRET}",
+          "secret": "${OAUTH2_PROXY_CLIENT_SECRET}",
           "standardFlowEnabled": true,
           "directAccessGrantsEnabled": false,
           "serviceAccountsEnabled": false,
@@ -99,16 +99,16 @@ data:
       ],
       "users": [
         {
-          "username": "${env.KEYCLOAK_DEMO_USER}",
+          "username": "${KEYCLOAK_DEMO_USER}",
           "enabled": true,
-          "email": "${env.KEYCLOAK_DEMO_USER}@k8s.lan",
+          "email": "${KEYCLOAK_DEMO_USER}@k8s.lan",
           "emailVerified": true,
           "firstName": "Andrey",
           "lastName": "User",
           "credentials": [
             {
               "type": "password",
-              "value": "${env.KEYCLOAK_DEMO_USER_PASSWORD}",
+              "value": "${KEYCLOAK_DEMO_USER_PASSWORD}",
               "temporary": false
             }
           ],

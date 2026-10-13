@@ -84,9 +84,9 @@
         for k in $missing; do
           case "$k" in
           {% for k, v in s['keys'].items() %}
-          {{ k }}) v='{{ v if v is not none else (lookup('pipe', 'openssl rand -base64 32')) }}';;
+          {{ k }}) v='{{ v if v is not none else (lookup('pipe', 'openssl rand -hex 16')) }}';;
           {% endfor %}
-          *) v="$(openssl rand -base64 32)";;
+          *) v="$(openssl rand -hex 16)";;
           esac
           args="$args $k=$v"
         done
