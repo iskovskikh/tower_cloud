@@ -4,6 +4,23 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Fix: 502 on oauth2-proxy OIDC callback (nginx header buffer)
+
+- **Symptom.** Logging into an SSO-protected app failed with **502 Bad Gateway**
+  on `https://auth.k8s.lan/oauth2/callback` (browser showed a 502 after the
+  Keycloak login). oauth2-proxy logged `[AuthSuccess]` and returned 302, so the
+  login itself worked.
+- **Root cause.** ingress-nginx error log:
+  `upstream sent too big header while reading response header from upstream`
+  — oauth2-proxy's `Set-Cookie` (session + id_token) does not fit the default
+  4 KiB response-header buffer.
+- **Fix.** Raised the controller buffers in the ingress-nginx HelmRelease
+  (`controller.config`): `proxy-buffer-size: 16k`, `proxy-buffers-number: 8`,
+  `proxy-busy-buffers-size: 32k`. Verified by replaying the full SSO flow
+  (transmission → auth start → Keycloak login → callback → app): no 502.
+
+---
+
 ## 2026-10-13 — Keycloak: realm-as-code user management + user `aiskovskikh`
 
 - Added Ansible role **`keycloak_config`** (`playbooks/keycloak.yml`):
