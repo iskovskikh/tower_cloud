@@ -136,7 +136,7 @@ _Updated: 2026-10-13_
   `/transmission/rpc` exempted in oauth2-proxy for API clients (Transmission
   basic auth). Creds in Vault `secret/transmission` → ESO. No torrent state to
   migrate (empty). Outbound-only peers for now. Manifests under
-  `k8s/apps/media/transmission/`. (Not yet applied to the cluster.)
+  `k8s/apps/media/transmission/`.
 - 2026-10-13 — **SSO / identity live: Keycloak.** Postgres 18.6 (new 20 Gi tower
   LUN, static PV) backs **Keycloak 26.8.1** (ns `keycloak`, `keycloak.k8s.lan`).
   Bootstrap realm `tower` (clients `vault`, `oauth2-proxy`; test user) imported
