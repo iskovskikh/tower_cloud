@@ -1,7 +1,11 @@
 ---
 # iSCSI initiator on the k8s nodes so pods can attach block volumes from tower.
-# A CSI driver (dynamic provisioning later) manages discovery/login itself;
-# this role makes the static Phase-1 smoke test reproducible.
+#
+# We deliberately do NOT log in here: the kubelet in-tree iscsi plugin performs
+# discovery + login on attach and logout on detach, so only the node that
+# actually uses a volume holds a session. Pre-logging every node to the target
+# leaves stale (pre-format) device views on the other nodes, and a later
+# reschedule makes their kubelet reformat the LUN — destroying data.
 
 - name: initiator | install open-iscsi
   ansible.builtin.apt:
@@ -16,29 +20,9 @@
     state: started
     enabled: true
 
-- name: initiator | discover targets on tower
+- name: initiator | discover targets on tower (populate node records, no login)
   ansible.builtin.command:
     cmd: iscsiadm -m discovery -t sendtargets -p {{ tower_iscsi_portal }}
   register: tower_iscsi_disc
-  changed_when: false
-
-- name: initiator | log in to the tower target
-  ansible.builtin.shell:
-    cmd: |
-      set -eu
-      iscsiadm -m node -T {{ tower_iscsi_target_iqn }} -p {{ tower_iscsi_portal }} \
-        -o update -n node.startup -v automatic >/dev/null
-      if iscsiadm -m session 2>/dev/null | grep -q '{{ tower_iscsi_target_iqn }}'; then
-        echo OK
-      else
-        iscsiadm -m node -T {{ tower_iscsi_target_iqn }} -p {{ tower_iscsi_portal }} --login >/dev/null
-        echo CHANGED
-      fi
-  register: tower_iscsi_login
-  changed_when: "'CHANGED' in tower_iscsi_login.stdout"
-
-- name: initiator | rescan sessions to pick up new LUNs
-  ansible.builtin.command:
-    cmd: iscsiadm -m session --rescan
   changed_when: false
 
