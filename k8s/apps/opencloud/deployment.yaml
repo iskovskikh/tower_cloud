@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencloud
+  namespace: opencloud
+  labels:
+    app: opencloud
+spec:
+  replicas: 1
+  # Single instance with an embedded IDM/storage engine — never run two pods
+  # against the same data directory.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: opencloud
+  template:
+    metadata:
+      labels:
+        app: opencloud
+    spec:
+      # The image runs as uid/gid 1000 (see docker-compose `user: 1000:1000`);
+      # fsGroup keeps the freshly provisioned NFS dirs writable.
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      # `opencloud init` generates /etc/opencloud/opencloud.yaml with random
+      # secrets and seeds the embedded LDAP admin. It fails harmlessly once the
+      # config already exists (as in the reference compose command), so the
+      # failure is swallowed and `server` starts either way.
+      initContainers:
+        - name: init
+          image: opencloudeu/opencloud:7.2.4
+          command:
+            - /bin/sh
+            - -c
+            - opencloud init || true
+          env:
+            # init reads these too: without OC_INSECURE it prompts interactively
+            # ("configure OpenCloud with certificate checking disabled?") and
+            # loops forever, since there is no TTY.
+            - name: OC_URL
+              value: "https://opencloud.k8s.lan"
+            - name: OC_INSECURE
+              value: "true"
+            - name: IDM_CREATE_DEMO_USERS
+              value: "false"
+            - name: IDM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud-secrets
+                  key: IDM_ADMIN_PASSWORD
+            # DecomposedS3: user blobs live in Garage (S3); metadata + the
+            # embedded IDM stay on the local block volume (needs xattrs).
+            - name: STORAGE_USERS_DRIVER
+              value: decomposeds3
+            - name: STORAGE_SYSTEM_DRIVER
+              value: decomposed
+            - name: STORAGE_USERS_DECOMPOSEDS3_ENDPOINT
+              value: "http://192.168.30.200:3900"
+            - name: STORAGE_USERS_DECOMPOSEDS3_REGION
+              value: garage
+            - name: STORAGE_USERS_DECOMPOSEDS3_BUCKET
+              value: opencloud
+            - name: STORAGE_USERS_DECOMPOSEDS3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud-secrets
+                  key: S3_ACCESS_KEY
+            - name: STORAGE_USERS_DECOMPOSEDS3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud-secrets
+                  key: S3_SECRET_KEY
+          volumeMounts:
+            - name: config
+              mountPath: /etc/opencloud
+            - name: data
+              mountPath: /var/lib/opencloud
+      containers:
+        - name: opencloud
+          image: opencloudeu/opencloud:7.2.4
+          env:
+            # External URL baked into the OIDC issuer and every generated link.
+            - name: OC_URL
+              value: "https://opencloud.k8s.lan"
+            # nginx terminates TLS; the OpenCloud proxy serves plain HTTP.
+            - name: PROXY_TLS
+              value: "false"
+            - name: PROXY_HTTP_ADDR
+              value: "0.0.0.0:9200"
+            # Self-signed internal CA (tower-ca) is not in the image trust store.
+            - name: OC_INSECURE
+              value: "true"
+            # No public demo accounts.
+            - name: IDM_CREATE_DEMO_USERS
+              value: "false"
+            # Only honoured on the first start (init), see externalsecret.yaml.
+            - name: IDM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud-secrets
+                  key: IDM_ADMIN_PASSWORD
+            # DecomposedS3: user blobs live in Garage (S3); metadata + the
+            # embedded IDM stay on the local block volume (needs xattrs).
+            - name: STORAGE_USERS_DRIVER
+              value: decomposeds3
+            - name: STORAGE_SYSTEM_DRIVER
+              value: decomposed
+            - name: STORAGE_USERS_DECOMPOSEDS3_ENDPOINT
+              value: "http://192.168.30.200:3900"
+            - name: STORAGE_USERS_DECOMPOSEDS3_REGION
+              value: garage
+            - name: STORAGE_USERS_DECOMPOSEDS3_BUCKET
+              value: opencloud
+            - name: STORAGE_USERS_DECOMPOSEDS3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud-secrets
+                  key: S3_ACCESS_KEY
+            - name: STORAGE_USERS_DECOMPOSEDS3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud-secrets
+                  key: S3_SECRET_KEY
+            - name: OC_LOG_LEVEL
+              value: "info"
+            - name: OC_LOG_PRETTY
+              value: "false"
+            - name: FRONTEND_ARCHIVER_MAX_SIZE
+              value: "10000000000"
+            - name: TZ
+              value: "Europe/Moscow"
+          ports:
+            - name: http
+              containerPort: 9200
+          volumeMounts:
+            - name: config
+              mountPath: /etc/opencloud
+            - name: data
+              mountPath: /var/lib/opencloud
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: opencloud-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: opencloud-data

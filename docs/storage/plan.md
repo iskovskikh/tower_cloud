@@ -1,8 +1,9 @@
 # Storage plan — tower as a storage appliance for k8s
 
 **Status:** PoC — partially implemented (2026-10-13). Live: NFS (RWX) via
-`csi-driver-nfs` (`tower-nfs`) and **static** RWO iSCSI PVs
-(`tower-iscsi-static`). Not yet: MinIO/S3.
+`csi-driver-nfs` (`tower-nfs`), **static** RWO iSCSI PVs
+(`tower-iscsi-static`), and **S3** via Garage running on tower itself (see
+[`garage.md`](garage.md)).
 **Drafted:** 2026-10-13 · observed from `archasus`.
 
 Goal: turn **tower** (`192.168.30.200`) into the cluster's storage appliance
@@ -29,13 +30,14 @@ Priority for now is a **PoC on what already exists**; durability comes later.
 ```
 tower 192.168.30.200  (storage appliance)
  ├─ NFS export  :2049   /mnt/raid1/k8s-nfs       -> StorageClass tower-nfs (RWX)
- └─ iSCSI LIO   :3260   fileio LUNs  /mnt/raid1/k8s-iscsi/*.img  (configfs)
-        │   VLAN120 <-> 192.168.30.0/24, router forwards 2049/3260/9000
+ ├─ iSCSI LIO   :3260   fileio LUNs  /mnt/raid1/k8s-iscsi/*.img  (configfs)
+ └─ Garage S3   :3900   data_dir /mnt/raid1/garage (Docker, host-local)
+        │   VLAN120 <-> 192.168.30.0/24, router forwards 2049/3260/3900
         ▼
 k8s (k8s-node-1..4, VMs on proxmox)
  ├─ StorageClass tower-nfs         (RWX, dynamic — csi-driver-nfs)
- ├─ StorageClass tower-iscsi-static (RWO block, static PVs: vault, garage)
- └─ Garage S3 (:3900) on a tower block LUN — object storage
+ ├─ StorageClass tower-iscsi-static (RWO block, static PVs: vault, postgres, …)
+ └─ apps speak S3 to tower:3900 directly (no PV/PVC) — e.g. OpenCloud blobs
 ```
 
 ## Phases
@@ -88,9 +90,11 @@ ZFS/DRBD on this kernel proves viable.
 
 ### Phase 2 — object storage (S3)
 
-- Run an S3 server on tower; apps use the **S3 API** with credentials — no CSI
-  needed. **Implemented with [Garage](https://garagehq.deuxfleurs.fr/)** (v2.4.1)
-  instead of MinIO, whose container images became gated/unavailable in 2026.
+- Object storage does **not** need a block device. **Garage** (v2.4.1) runs on
+  **tower** itself (Docker, `data_dir=/mnt/raid1/garage`), and apps use the
+  **S3 API** with credentials — no CSI needed. This replaces the earlier design
+  of a Garage pod on a dedicated 50 GiB tower LUN (that LUN, `lun 2`, is now
+  retired). See [`garage.md`](garage.md) for the setup and the migration runbook.
 - Only if a pod needs a *filesystem view* of a bucket, add a CSI-S3 driver
   (e.g. `csi-s3` / geesefs) as an optional `StorageClass`.
 
@@ -114,7 +118,7 @@ ZFS/DRBD on this kernel proves viable.
 1. Where should block backing live: file on `/mnt/raid1` (PoC) vs dedicated
    disks / LVM-thin later?
 2. Is VLAN 120 ↔ `192.168.30.0/24` routed and firewalled? Need `3260` (iSCSI)
-   and `9000` (S3) reachable from workers.
+   and `3900` (Garage S3) reachable from workers.
 3. Which Phase-1 driver: democratic-csi + ZFS, or LINSTOR + LVM-thin?
 4. Worker VM OS and whether `open-iscsi` can be installed there.
 5. How to snapshot / back up block volumes?
@@ -123,6 +127,7 @@ ZFS/DRBD on this kernel proves viable.
 
 ## References
 
+- Garage (S3 on tower) — <https://garagehq.deuxfleurs.fr/> · [`garage.md`](garage.md)
 - democratic-csi — <https://github.com/democratic-csi/democratic-csi>
   (drivers include `zfs-generic-iscsi` for any ZoL host).
 - LINSTOR / Piraeus CSI — <https://github.com/piraeusdatastore/linstor-csi>

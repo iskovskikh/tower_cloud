@@ -1,0 +1,59 @@
+# OpenCloud generated config/secrets (/etc/opencloud). Plain YAML + a small
+# bootstrap admin DB — no special filesystem features needed, so a small
+# dynamic PVC on tower's RWX NFS export.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opencloud-config
+  namespace: opencloud
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: tower-nfs
+  resources:
+    requests:
+      storage: 1Gi
+---
+# OpenCloud data + metadata (/var/lib/opencloud): user blobs, revisions, trash
+# and the embedded LDAP/IDM.
+#
+# The POSIX ("decomposed") storage driver REQUIRES extended attributes, which
+# this NFS export does not provide — the Linux NFS client only supports user.*
+# xattrs over NFSv4.2, and vers=4.2 OOMs the 4 GiB nodes (see the tower-nfs
+# StorageClass). So data lives on a dedicated tower iSCSI LUN (backstore
+# "opencloud" = lun 5, 500 GiB, ext4 which supports xattrs) — the same RWO block
+# pattern as Jellyfin/Vault/Postgres.
+#
+# The LUN is a *sparse* backing file (ansible/tower_storage `sparse: true`): it
+# reports 500 GiB but only consumes array blocks as data is written ("floats").
+# Thin provisioning — monitor free space on /mnt/raid1; if it fills, writes fail.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tower-iscsi-opencloud
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: tower-iscsi-static
+  iscsi:
+    targetPortal: 192.168.30.200:3260
+    iqn: iqn.2026-10.lan.tower:k8s
+    lun: 5
+    fsType: ext4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opencloud-data
+  namespace: opencloud
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: tower-iscsi-static
+  volumeName: tower-iscsi-opencloud
+  resources:
+    requests:
+      storage: 500Gi

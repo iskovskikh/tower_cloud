@@ -1,6 +1,6 @@
 ---
 # OpenWrt router: routing + firewall between LAN, server segment and VLAN 120.
-# Configured declaratively via uci; storage ports 2049/3260/9000 must reach the
+# Configured declaratively via uci; storage ports 2049/3260/3900 must reach the
 # cluster. Idempotent: options are only written when they differ, and the
 # firewall reloads only when something actually changed.
 #

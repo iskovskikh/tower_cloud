@@ -95,14 +95,17 @@ hosts:
       fakeraid 2026-10-13 (see CHANGELOG).
       Historically was 192.168.1.200 before the move to the .30 subnet.
       Since 2026-10-13 also the cluster storage appliance (СХД): NFSv4 export
-      /mnt/raid1/k8s-nfs (RWX) and an iSCSI LIO target iqn.2026-10.lan.tower:k8s
-      (RWO, fileio LUN on /mnt/raid1/k8s-iscsi). Configured by the Ansible role
-      tower_storage; see docs/storage/plan.md.
+      /mnt/raid1/k8s-nfs (RWX), an iSCSI LIO target iqn.2026-10.lan.tower:k8s
+      (RWO, fileio LUN on /mnt/raid1/k8s-iscsi), and **Garage S3** (:3900, a
+      Docker container with data_dir /mnt/raid1/garage — no iSCSI LUN). Configured
+      by the Ansible role tower_storage; see docs/storage/plan.md and
+      docs/storage/garage.md.
     services:
       - {port: 22, proto: tcp, service: ssh}
       - {port: 80, proto: tcp, service: "nginx 1.30.5 (webserver; Jellyfin proxy site disabled)"}
       - {port: 2049, proto: tcp, service: "NFSv4 server — exports /mnt/raid1/k8s-nfs (RWX) and /mnt/raid1/share/downloads (media library) -> k8s"}
       - {port: 3260, proto: tcp, service: "iSCSI LIO target iqn.2026-10.lan.tower:k8s (configfs)"}
+      - {port: 3900, proto: tcp, service: "Garage S3 API (object storage; Docker, host network)"}
     disabled_services:
       - "MiniDLNA (8200) — stopped + disabled 2026-10-13"
       - "Jellyfin (8096) — Docker container stopped 2026-10-13; migrated to k8s (ns media, jellyfin.k8s.lan)"
@@ -194,7 +197,8 @@ kubernetes:
     containerd 2.4.1, kubeadm v1.37.1, Calico v3.33 operator; 4/4 nodes Ready.
     kubeconfig on archasus. StorageClasses `tower-nfs`/`tower-iscsi-static`;
     ingress-nginx (hostNetwork DaemonSet on **all** nodes, incl. control-plane
-    via toleration); cert-manager; Garage S3. DNS wildcard `*.k8s.lan` ->
+    via toleration); cert-manager; Garage S3 (runs on **tower**, :3900 — see the
+    tower entry). DNS wildcard `*.k8s.lan` ->
     10.10.120.101-104 served by the router; e.g. Vault UI at
     `https://vault.k8s.lan`.
     **SSO (2026-10-13):** Keycloak 26.8.1 (`https://keycloak.k8s.lan`, ns
@@ -212,6 +216,15 @@ kubernetes:
     lun 4), same NFS export mounted at `/media`. Browser UI (`/web`) behind
     Keycloak SSO; the HTTP API and `/socket` are left open for native clients
     (Android TV, iOS, Kodi). Nodes have no `/dev/dri` → software transcoding only.
+    **OpenCloud (2026-10-13):** self-hosted file sync/share/collab
+    (opencloud.eu) in ns `opencloud`, `https://opencloud.k8s.lan`
+    (`opencloudeu/opencloud:7.2.4`). Storage **`decomposeds3`**: user **blobs in
+    Garage S3** (bucket `opencloud`; Garage runs on tower, :3900); metadata + the
+    embedded IDM on a dedicated
+    tower iSCSI LUN (`opencloud`, lun 5, ext4, **sparse** → floats; POSIX+xattr
+    can't be NFS); `/etc/opencloud` on a small `tower-nfs` PVC. Serves its own
+    login (built-in IDM/IDP) → not behind oauth2-proxy. Verified end-to-end
+    (WebDAV upload → object landed in Garage).
     **Memory (2026-10-13):** proxmox has only 16 GB, so 4×4 GB over-commits.
     Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
     balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and

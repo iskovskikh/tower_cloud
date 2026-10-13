@@ -42,6 +42,14 @@ This is the same path Vault uses for its Raft data.
 
 - Backing files live in `/mnt/raid1/k8s-iscsi/<name>.img`; the target IQN is
   `iqn.2026-10.lan.tower:k8s`, portal `192.168.30.200:3260`.
+- **Thin / "floating" volumes:** add `sparse: true` to a volume (e.g.
+  `{ name: opencloud, size: 500G, sparse: true }`) to back it with a **sparse**
+  file (`truncate -s`) instead of a preallocated one (`fallocate -l`). The LUN
+  still reports its full size but only consumes array blocks as the guest writes.
+  Caveat: thin provisioning — if `/mnt/raid1` fills up, guest writes fail
+  (ENOSPC); monitor free space. Changing this on an existing volume requires
+  recreating its backing file (drop the LUN + backstore, delete the file, rerun
+  the play) and reformatting the filesystem.
 - **Single writer:** a LUN is RWO; never mount it on two nodes. The initiator
   role intentionally does **not** pre-login nodes (the kubelet plugin manages
   login/logout) to avoid stale views and accidental reformat.

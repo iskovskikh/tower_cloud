@@ -1,5 +1,5 @@
 ---
-- name: tower — storage appliance (NFS / iSCSI / MinIO)
+- name: tower — storage appliance (NFS / iSCSI / Garage)
   hosts: tower
   become: true
   roles:

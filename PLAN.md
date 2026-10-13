@@ -21,13 +21,14 @@ _Updated: 2026-10-13_
 
 ## Phase 1 — tower storage (СХД)
 
-- [x] firewall/routing VLAN 120 ↔ `192.168.30.0/24` (ports 2049, 3260, 9000)
+- [x] firewall/routing VLAN 120 ↔ `192.168.30.0/24` (ports 2049, 3260, 3900)
       — OpenWrt zone forwarding `vlan120`→`srv` + port rule (role `router_openwrt`)
 - [x] NFS export (RWX) — `/mnt/raid1/k8s-nfs` to `10.10.120.0/24` + `192.168.30.0/24`
 - [x] iSCSI LIO target (RWO block) — fileio LUN on `/mnt/raid1/k8s-iscsi`,
       configured via **configfs** (targetcli is AUR-only on Arch and the local
       AUR helpers are broken); boot unit `tower-iscsi`
 - [ ] MinIO (S3) — deferred to Phase 3 (needs a secret source; `tower_minio_enabled=false`)
+      → superseded by **Garage on tower** (Phase 4); the MinIO task was removed
 - [x] `ansible` role `tower_storage` implemented + idempotent
 - [x] validated from a test pod — `open-iscsi` initiator on all nodes (role
       `k8s_storage_client`, playbook `k8s-storage.yml`); static `iscsi` PV/PVC +
@@ -87,11 +88,12 @@ _Updated: 2026-10-13_
       block CSI fits this tower (democratic-csi needs ZFS+targetcli;
       csi-driver-iscsi is attach-only) — dynamic block deliberately deferred.
       See `docs/storage/static-iscsi.md`.
-- [x] `tower-s3` — **Garage v2.4.1** (MinIO images are now gated — `unauthorized`):
-      single node on a tower block LUN (lun 2); `garage.toml` rendered by ESO
-      from Vault (`secret/garage` → rpc_secret/admin_token; S3 keys in
-      `secret/garage-s3`). Validated with `aws-cli` (put/list in bucket
-      `artifacts`).
+- [x] `tower-s3` — **Garage v2.4.1**, now running **on tower** (Docker, host
+      network, `data_dir=/mnt/raid1/garage`) — object storage needs no block
+      device, so the old k8s Garage pod + 50 GiB block LUN (lun 2) were retired.
+      `garage.toml` rendered by Ansible; secrets (`secret/garage`) from env.
+      OpenCloud blobs go to it over `http://192.168.30.200:3900`. See
+      `docs/storage/garage.md`.
 - [x] ingress controller — **ingress-nginx v1.15.1** via Flux, run as a
       hostNetwork DaemonSet (no cloud LB): any node IP `:80` (`:443` free) is an
       entry point, reachable from the LAN through the router. Class `nginx`
@@ -120,6 +122,17 @@ _Updated: 2026-10-13_
       annotations (demo: `whoami.k8s.lan`). Vault UI logs in via Keycloak OIDC.
       Secrets generated in Vault (`secret/keycloak`) → ESO. See
       `docs/identity/README.md`.
+- [x] **OpenCloud** — self-hosted file sync/share/collab (opencloud.eu, the Go
+      fork of ownCloud Infinite Scale), ns `opencloud`, `opencloud.k8s.lan`.
+      Manifests in `k8s/apps/opencloud/` (Deployment
+      `opencloudeu/opencloud:7.2.4`, built-in IDM/IDP — **not** behind
+      oauth2-proxy; Service :9200; Ingress with `tower-ca`; ExternalSecret from
+      Vault `secret/opencloud`). Storage is **`decomposeds3`**: user **blobs go
+      to Garage S3** (bucket `opencloud`); metadata + the embedded IDM stay on a
+      tower iSCSI LUN (lun 5, 500 GiB **sparse** — floats) because POSIX+xattrs
+      can't be served over this NFS. `/etc/opencloud` on a small `tower-nfs` PVC.
+      Verified end-to-end (WebDAV upload → 1 object in Garage, round-trip OK);
+      ingress `curl --cacert tower-ca` → 200. Keycloak federation is a follow-up.
 
 ## Phase 5 — reliability
 
@@ -129,6 +142,38 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **S3 moved off the block LUN: Garage now runs on tower.**
+  Object storage needs no block device, so Garage was relocated from a k8s pod
+  on a 50 GiB tower LUN (lun 2) to a Docker container on tower itself
+  (`data_dir=/mnt/raid1/garage`, host network, `server --single-node`). This
+  removes the fixed cap (thin on `/mnt/raid1`) and the double network hop.
+  Ansible role `tower_storage` (`tasks/garage.yml` + `garage.toml.j2`); router
+  rule ports `2049 3260 9000` → `2049 3260 3900`; removed
+  `k8s/apps/storage/garage/`; OpenCloud endpoint →
+  `http://192.168.30.200:3900` (bucket migrated with rclone, key re-imported so
+  Vault was unchanged). Lun 2 kept as a placeholder to avoid renumbering the
+  following LUNs. See `docs/storage/garage.md`.
+- 2026-10-13 — **OpenCloud live** (ns `opencloud`, `https://opencloud.k8s.lan`,
+  `opencloudeu/opencloud:7.2.4`) — self-hosted file sync/share/collab. Ships its
+  own IDM/IDP and serves its own login, so it is **not** behind oauth2-proxy
+  (`PROXY_TLS=false`; nginx terminates TLS). Admin password in Vault
+  `secret/opencloud` → ESO (`IDM_ADMIN_PASSWORD`, read only on first init).
+  **Storage gotcha:** the POSIX ("decomposed") storage driver needs **extended
+  attributes**; tower's NFS export doesn't provide `user.*` xattrs (the kernel
+  NFS client only does so via NFSv4.2, and vers=4.2 OOMs the 4 GiB nodes), so
+  the first deploy crash-looped with `unfit storage ... extended attributes not
+  supported`. Fixed by moving `/var/lib/opencloud` onto a **dedicated tower
+  iSCSI LUN** (`opencloud`, lun 5, ext4; static PV `tower-iscsi-opencloud`).
+  The LUN is **sparse** (role flag `sparse: true` → `truncate` not `fallocate`),
+  so it reports 500 GiB but only takes array blocks on demand.
+  **Storage switched to `decomposeds3`:** user blobs now go to **Garage S3**
+  (new bucket `opencloud` + key, creds in Vault `secret/opencloud`), while
+  metadata + embedded IDM remain on the block LUN. Verified end-to-end via a
+  temporary basic-auth WebDAV PUT → 1 object appeared in Garage, round-trip OK.
+  `/etc/opencloud` stays on a small `tower-nfs` PVC.
+  LUN added to `ansible/roles/tower_storage`. Verified: pod Ready, Ingress
+  serves 200 (root + OIDC discovery), cert valid under `tower-ca`. Keycloak
+  federation is a follow-up. Manifests `k8s/apps/opencloud/`.
 - 2026-10-13 — **Jellyfin moved from tower to k8s** (ns `media`,
   `https://jellyfin.k8s.lan`, `jellyfin/jellyfin:10.11.6`). `/config`
   (metadata + SQLite) migrated onto a dedicated tower iSCSI LUN (`jellyfin`,

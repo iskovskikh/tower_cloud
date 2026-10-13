@@ -1,0 +1,17 @@
+# The OpenCloud "proxy" fronts every internal service (web, OIDC/IDP, LDAP,
+# storage, ...) on a single port. nginx terminates TLS and proxies HTTP here,
+# so the proxy runs with PROXY_TLS=false.
+apiVersion: v1
+kind: Service
+metadata:
+  name: opencloud
+  namespace: opencloud
+  labels:
+    app: opencloud
+spec:
+  selector:
+    app: opencloud
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200

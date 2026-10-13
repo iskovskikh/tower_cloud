@@ -7,7 +7,7 @@
 # the default firewall REJECTs forwarding between zones, so we must add an
 # explicit forwarding pair plus per-port allow rules.
 #
-# See docs/storage/plan.md (storage ports 2049/3260/9000).
+# See docs/storage/plan.md (storage ports 2049/3260/3900).
 
 # No broad zone-pair forwarding: only the ports in router_openwrt_rules are
 # allowed through, so the zones keep their default REJECT for everything else.
@@ -21,11 +21,11 @@ router_openwrt_remove_sections:
 # Ports opened through the router. Return traffic is stateful (conntrack).
 router_openwrt_rules:
   - name: k8s_v120_srv_storage
-    title: "k8s storage: NFS/iSCSI/MinIO -> tower"
+    title: "k8s storage: NFS/iSCSI/Garage S3 -> tower"
     src: vlan120
     dest: srv
     proto: tcp
-    ports: "2049 3260 9000"
+    ports: "2049 3260 3900"
     target: ACCEPT
 
 # --- DNS (dnsmasq) ----------------------------------------------------------

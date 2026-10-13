@@ -1,0 +1,67 @@
+---
+# Garage S3 object storage on tower, run as a Docker container with its data
+# directory on the data array (no iSCSI LUN involved). Clients use the S3 API
+# over the network. `--single-node` configures the cluster layout
+# automatically, so there is no imperative `layout assign/apply` step.
+# See docs/storage/plan.md (Phase 2) and docs/storage/garage.md.
+
+- name: garage | require secrets
+  ansible.builtin.assert:
+    that:
+      - tower_garage_rpc_secret | length > 0
+      - tower_garage_admin_token | length > 0
+    fail_msg: >-
+      Set GARAGE_RPC_SECRET and GARAGE_ADMIN_TOKEN in the environment (secrets
+      are not stored in the repo). Reuse the values at Vault secret/garage.
+
+- name: garage | install Docker SDK for Ansible
+  community.general.pacman:
+    name:
+      - python-docker
+      - python-requests
+    state: present
+
+- name: garage | create data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ tower_garage_data_dir }}"
+    - "{{ tower_garage_data_dir }}/meta"
+    - "{{ tower_garage_data_dir }}/data"
+
+- name: garage | create config directory
+  ansible.builtin.file:
+    path: "{{ tower_garage_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: garage | render garage.toml (secrets from the environment)
+  ansible.builtin.template:
+    src: garage.toml.j2
+    dest: "{{ tower_garage_config_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: garage | run container
+  community.docker.docker_container:
+    name: garage
+    image: "{{ tower_garage_image }}"
+    state: started
+    restart_policy: unless-stopped
+    # Host networking: the RPC/S3/admin ports belong to tower directly, which
+    # keeps the advertised endpoints and the rpc_public_addr consistent.
+    network_mode: host
+    entrypoint: /garage
+    command: "server --single-node"
+    env:
+      RUST_LOG: "info"
+    volumes:
+      - "{{ tower_garage_config_path }}:/etc/garage.toml:ro"
+      - "{{ tower_garage_data_dir }}:{{ tower_garage_data_dir }}"

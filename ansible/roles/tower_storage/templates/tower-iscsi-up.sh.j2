@@ -22,9 +22,14 @@ for m in target_core_mod iscsi_target_mod target_core_file; do
 done
 
 # backing files
+# By default the file is preallocated (fallocate → real blocks reserved now).
+# With `sparse: true` it is created with truncate instead, so blocks are
+# allocated lazily as the guest writes — the volume "floats" and only consumes
+# array space on demand (up to the logical size, the LUN's cap). Thin
+# provisioning: if the array fills up, writes fail (ENOSPC) — monitor free space.
 mkdir -p "{{ tower_iscsi_dir }}"
 {% for vol in tower_iscsi_volumes %}
-[ -f "{{ tower_iscsi_dir }}/{{ vol.name }}.img" ] || { fallocate -l {{ vol.size }} "{{ tower_iscsi_dir }}/{{ vol.name }}.img"; changed=1; }
+[ -f "{{ tower_iscsi_dir }}/{{ vol.name }}.img" ] || { {% if vol.sparse | default(false) %}truncate -s {{ vol.size }}{% else %}fallocate -l {{ vol.size }}{% endif %} "{{ tower_iscsi_dir }}/{{ vol.name }}.img"; changed=1; }
 {% endfor %}
 
 # fabric root + fileio plugin instance

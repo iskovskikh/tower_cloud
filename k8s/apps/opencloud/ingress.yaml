@@ -1,0 +1,37 @@
+# OpenCloud is its own identity provider (built-in IDM/IDP), so — unlike
+# Jellyfin/Transmission — this host is NOT behind oauth2-proxy forward-auth:
+# the OpenCloud web UI logs in against its own OIDC endpoint served on the same
+# host. Keycloak federation is a possible follow-up.
+#
+# The proxy-body/buffering/timeout annotations mirror OpenCloud's reference
+# nginx config: uploads (Tus) and server-sent events need large bodies,
+# unbuffered proxying and long-lived connections.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opencloud
+  namespace: opencloud
+  annotations:
+    cert-manager.io/cluster-issuer: tower-ca
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - opencloud.k8s.lan
+      secretName: opencloud-tls
+  rules:
+    - host: opencloud.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: opencloud
+                port:
+                  number: 9200

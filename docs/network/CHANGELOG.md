@@ -4,6 +4,95 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — S3: Garage moved off the k8s block LUN onto tower
+
+Executed from `archasus` (Ansible + Flux/kubectl).
+
+- **Rationale.** Object storage does not need a block device. **Garage** now runs
+  **on tower** next to the disks (`data_dir=/mnt/raid1/garage`), so there is no
+  iSCSI LUN / PV / PVC and no double network hop — and the fixed **50 GiB** cap
+  is gone (space is thin on `/mnt/raid1`).
+- **Ansible — `tower_storage` role.** New `tasks/garage.yml` +
+  `templates/garage.toml.j2`: Docker container `garage` (
+  `dxflrs/garage:v2.4.1`, host network, `server --single-node`, data on
+  `/mnt/raid1/garage`). `rpc_secret`/`admin_token` come from the environment at
+  play time (`GARAGE_RPC_SECRET`/`GARAGE_ADMIN_TOKEN`), matching Vault
+  `secret/garage` — never committed. The disabled MinIO task was removed
+  (`tasks/minio.yml`, `tower_minio_*`).
+- **Router.** `router_openwrt` storage rule ports `2049 3260 9000` →
+  `2049 3260 3900` (MinIO's 9000 dropped; Garage S3 is 3900).
+- **k8s.** Deleted `k8s/apps/storage/garage/` (namespace, deployment, service,
+  externalsecret, pv-pvc); Flux prunes them. OpenCloud
+  `STORAGE_USERS_DECOMPOSEDS3_ENDPOINT` → `http://192.168.30.200:3900`.
+- **Retired LUN.** `garage` (lun 2, 50 GiB) is kept in `tower_iscsi_volumes` as a
+  placeholder: the LUN index is the list position, so removing it would renumber
+  `postgres`/`jellyfin`/`opencloud` and break their PVs. Reclaiming it is a
+  follow-up (requires renumbering).
+- **Migration.** The `opencloud` bucket was copied with rclone and the existing
+  key re-imported, so Vault `secret/opencloud` was unchanged. Runbook:
+  `docs/storage/garage.md`.
+
+## 2026-10-13 — OpenCloud (file sync/share) deployed to k8s
+
+Executed from `archasus` (Ansible + Flux/kubectl).
+
+- **New app.** Added `k8s/apps/opencloud/` — **OpenCloud** (opencloud.eu, the Go
+  fork of ownCloud Infinite Scale) in ns `opencloud`, `https://opencloud.k8s.lan`.
+  `Deployment` `opencloudeu/opencloud:7.2.4` (an `initContainer` runs
+  `opencloud init || true`, then `opencloud server`; uid/gid 1000, `Recreate`),
+  `Service` :9200, `Ingress` (issuer `tower-ca`; nginx annotations for large
+  bodies, no buffering and long timeouts — needed by Tus uploads and SSE), and an
+  `ExternalSecret` (Vault `secret/opencloud` → `IDM_ADMIN_PASSWORD`, only read on
+  first init; plus the Garage S3 access/secret keys). Admin password seeded with
+  `vault kv put secret/opencloud admin_password=…`.
+- **Storage gotcha — NFS can't host the data.** First deploy crash-looped:
+  ```
+  tree: unfit storage '/var/lib/opencloud/storage/users':
+  extended attributes not supported: xattr.Set ... user.posixfs.test: operation not supported
+  ```
+  OpenCloud's POSIX ("decomposed") storage driver **requires extended
+  attributes**. Tower's NFS export doesn't provide `user.*` xattrs — the Linux
+  NFS client only supports them via **NFSv4.2**, and vers=4.2 OOMs the 4 GiB
+  nodes (see the `tower-nfs` StorageClass, pinned to 4.1). So the data volume was
+  moved off NFS onto a **dedicated tower iSCSI LUN**: backstore `opencloud`
+  (**lun 5**, 500 GiB, ext4 which supports xattrs), static PV
+  `tower-iscsi-opencloud` (RWO). Append to `tower_iscsi_volumes` in
+  `ansible/roles/tower_storage` and run the tower play. `/etc/opencloud` (plain
+  config YAML, no xattrs needed) stays on a small dynamic `tower-nfs` PVC.
+  This is the same block pattern as Jellyfin/Vault/Postgres.
+- **Floating (thin) space.** The LUN is **sparse** — added a `sparse: true` flag
+  to `tower_iscsi_volumes`, which makes `tower-iscsi-up.sh` create the backing
+  file with `truncate -s` instead of `fallocate -l`. So it reports 500 GiB but
+  only allocates array blocks as data is written. Verified: file apparent 500 G,
+  on-disk ~1 GiB after init, `/mnt/raid1` back to ~990 G free. Caveat: thin
+  provisioning — if the array fills, guest writes fail (ENOSPC); monitor free.
+- **Storage switched to `decomposeds3` (blobs in Garage).** OpenCloud's
+  decomposeds3 driver keeps config/metadata on POSIX but stores file **blobs in
+  S3-compatible storage**. Created Garage bucket `opencloud` + key
+  (`garage bucket create opencloud`, `garage key create opencloud`,
+  `garage bucket allow --read --write --owner opencloud --key opencloud`);
+  access/secret stored in Vault `secret/opencloud`. Deployment env:
+  `STORAGE_USERS_DRIVER=decomposeds3`, `STORAGE_SYSTEM_DRIVER=decomposed`,
+  `STORAGE_USERS_DECOMPOSEDS3_{ENDPOINT,REGION,BUCKET}` and
+  `..._ACCESS_KEY/SECRET_KEY` from ESO. So the block LUN now holds only metadata
+  + the embedded IDM (grows with file *count*, not size) — still can't be NFS
+  (xattr). Note: Garage itself is a tower LUN, so capacity ultimately still
+  lands on the array.
+- **Not behind oauth2-proxy.** OpenCloud ships its own IDM/IDP and serves its own
+  login (OIDC issuer derived from `OC_URL`), so forward-auth would force a second
+  login; instead `PROXY_TLS=false` and nginx terminates TLS. Keycloak federation
+  (external IdP / shared LDAP) is a follow-up.
+- **Verified:** pod `1/1 Ready` (0 restarts), Ingress serves **HTTP 200** on `/`
+  and `/.well-known/openid-configuration`, cert valid under `tower-ca`
+  (`curl --cacert`). Initial admin user is `admin`; password in Vault.
+  End-to-end S3 test: with basic-auth temporarily enabled, a WebDAV PUT created
+  region `opencloud` object `Objects: 1` in Garage and round-tripped the content
+  — confirming blobs really land in S3.
+
+Sources: `k8s/apps/opencloud/`, `ansible/roles/tower_storage`.
+
+---
+
 ## 2026-10-13 — Jellyfin migrated from tower to k8s (media)
 
 Executed from `archasus` (Ansible + Flux).

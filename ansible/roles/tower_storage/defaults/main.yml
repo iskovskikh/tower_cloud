@@ -1,6 +1,6 @@
 ---
 # tower as the cluster storage appliance (СХД): NFS (RWX), iSCSI/LIO (RWO
-# block) and MinIO (S3). Backing storage lives on the data array /mnt/raid1.
+# block) and Garage (S3). Backing storage lives on the data array /mnt/raid1.
 # See docs/storage/plan.md and docs/adr/0001-infrastructure-as-code.md.
 
 # --- NFS: shared read-write filesystem for the cluster (RWX) --------------
@@ -30,23 +30,37 @@ tower_iscsi_portal_port: 3260
 tower_iscsi_volumes:
   - { name: vol1,   size: 10G }   # lun 0
   - { name: vault,  size: 10G }   # lun 1
-  - { name: garage, size: 50G }   # lun 2 (S3 object store)
+  # lun 2 (garage) is RETIRED: S3 now runs on tower itself (see tower_garage_*),
+  # not on a LUN. Keep the entry so the following LUN indices do not shift —
+  # removing it would renumber postgres/jellyfin/opencloud and break their PVs.
+  - { name: garage, size: 50G }   # lun 2 (unused — reclaim requires renumbering)
   - { name: postgres, size: 20G } # lun 3 (Keycloak / identity DB)
   - { name: jellyfin, size: 20G } # lun 4 (Jellyfin /config: metadata + SQLite)
+  - { name: opencloud, size: 500G, sparse: true } # lun 5 (OpenCloud data: POSIX xattrs + embedded LDAP; sparse → floats up to 500G)
 # Explicit initiator IQNs. Empty => dynamic ACLs (any initiator may attach) —
 # fine for the PoC, tighten before production.
 tower_iscsi_initiators: []
 # When initiators are pinned, disable dynamic ACLs so only they may attach.
 tower_iscsi_generate_node_acls: "{{ 0 if (tower_iscsi_initiators | length > 0) else 1 }}"
 
-# --- MinIO: S3 object storage ---------------------------------------------
-# Deferred until a secret source exists (Vault + ESO, Phase 3).
-tower_minio_enabled: false
-tower_minio_data_dir: /mnt/raid1/minio
-tower_minio_image: "minio/minio:latest"
-tower_minio_api_port: 9000
-tower_minio_console_port: 9001
-tower_minio_root_user: minioadmin
-# Never store the password in the repo: provide MINIO_ROOT_PASSWORD in the
-# environment (later: Vault + External Secrets).
-tower_minio_root_password: "{{ lookup('env', 'MINIO_ROOT_PASSWORD') | default('', true) }}"
+# --- Garage: S3 object storage --------------------------------------------
+# Runs on the storage host, next to the disks: data_dir lives directly on
+# /mnt/raid1, so no iSCSI LUN / PV / PVC is involved. Clients (in and out of
+# the cluster) use the S3 API over the network. See docs/storage/plan.md
+# (Phase 2) and docs/storage/garage.md.
+tower_garage_enabled: true
+tower_garage_data_dir: /mnt/raid1/garage
+tower_garage_config_path: /etc/garage/garage.toml
+tower_garage_image: "dxflrs/garage:v2.4.1"
+tower_garage_region: garage
+tower_garage_s3_port: 3900
+tower_garage_rpc_port: 3901
+tower_garage_web_port: 3902
+tower_garage_admin_port: 3903
+# Address others reach this node (and clients reach the S3 API) on. Defaults to
+# the host's primary IPv4 (192.168.30.200 on tower).
+tower_garage_public_addr: "{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+# Never store secrets in the repo: provide these in the environment, reusing
+# the values already held in Vault at secret/garage.
+tower_garage_rpc_secret: "{{ lookup('env', 'GARAGE_RPC_SECRET') | default('', true) }}"
+tower_garage_admin_token: "{{ lookup('env', 'GARAGE_ADMIN_TOKEN') | default('', true) }}"

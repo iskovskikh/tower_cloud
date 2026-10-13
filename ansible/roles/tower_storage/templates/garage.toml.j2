@@ -1,0 +1,26 @@
+# Managed by Ansible (roles/tower_storage). Garage S3 object storage on tower.
+# Secrets (rpc_secret, admin_token) are injected from the environment at play
+# time — never committed. See docs/storage/plan.md (Phase 2).
+metadata_dir = "{{ tower_garage_data_dir }}/meta"
+data_dir     = "{{ tower_garage_data_dir }}/data"
+db_engine    = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr   = "[::]:{{ tower_garage_rpc_port }}"
+rpc_public_addr = "{{ tower_garage_public_addr }}:{{ tower_garage_rpc_port }}"
+rpc_secret      = "{{ tower_garage_rpc_secret }}"
+
+[s3_api]
+s3_region          = "{{ tower_garage_region }}"
+api_bind_addr      = "[::]:{{ tower_garage_s3_port }}"
+root_domain        = ".s3.garage.localhost"
+advertise_endpoint = "http://{{ tower_garage_public_addr }}:{{ tower_garage_s3_port }}"
+
+[s3_web]
+bind_addr   = "[::]:{{ tower_garage_web_port }}"
+root_domain = ".web.garage.localhost"
+
+[admin]
+api_bind_addr = "[::]:{{ tower_garage_admin_port }}"
+admin_token   = "{{ tower_garage_admin_token }}"
