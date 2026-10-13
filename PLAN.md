@@ -52,9 +52,14 @@ _Updated: 2026-10-13_
       branch `master`); `flux-system` healthy, GitRepository + Kustomization
       reconciled. Repo now has remote `origin` (GitHub).
 - [x] Git remote `origin = git@github.com:iskovskikh/tower_cloud.git` (Phase 0 item)
-- [?] Vault storage backend (Raft vs S3-on-MinIO) + auto-unseal
-- [ ] Vault + External Secrets Operator installed via Flux
-- [ ] first `ExternalSecret` verified
+- [x] Vault storage backend decided: **Raft on tower iSCSI block** (LUN `vault`)
+- [x] **Vault deployed via Flux** (`k8s/apps/secrets/vault/`, plain manifests —
+      the Helm repo `helm.releases.hashicorp.com` is 403 from this network).
+      Single node, Raft, tls off. Initialized + unsealed; keys/root token kept
+      outside the repo (`~/.config/tower-cloud/vault-init.json`, 0600).
+- [?] auto-unseal: **none yet** — Vault is sealed after every restart, unseal by
+      hand (or wire a transit/KMS seal later)
+- [ ] External Secrets Operator + Vault kubernetes auth + first `ExternalSecret`
 
 ## Phase 4 — workloads
 
@@ -71,6 +76,12 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Vault live (Phase 3).** Deployed via Flux as plain manifests
+  (Helm repo blocked, 403): single-node Raft on a dedicated tower iSCSI LUN
+  (`vault`, lun 1), static PV + `tower-iscsi-static` StorageClass. Initialized
+  (5/3 Shamir) and unsealed; pods `1/1`. Keys/root token off-repo. Caveats:
+  manual unseal on restart; cluster_addr defaults to https:8201 (single node).
+  Next: ESO + Vault k8s auth.
 - 2026-10-13 — **Flux GitOps live.** Pushed the repo to
   `github.com:iskovskikh/tower_cloud` (SSH) and bootstrapped Flux v2.9.6
   (`flux bootstrap git --branch=master --path=k8s`, SSH deploy secret).

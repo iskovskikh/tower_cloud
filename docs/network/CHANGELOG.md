@@ -4,6 +4,31 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Vault (Raft) deployed on tower iSCSI block via Flux
+
+Executed from `archasus` (Flux GitOps).
+
+- Added a second iSCSI backstore **`vault`** on tower (`/mnt/raid1/k8s-iscsi/vault.img`,
+  10 GiB, **lun 1**); nodes rescanned and see it as `sdc` (role change:
+  `k8s_iscsi_initiator` now runs `iscsiadm -m session --rescan`).
+- Deployed **Vault v1.21.4** as plain manifests under `k8s/apps/secrets/vault/`
+  (Flux-reconciled): namespace, static PV `tower-iscsi-vault` (lun 1) +
+  `tower-iscsi-static` StorageClass (no-provisioner) + a `vault` StatefulSet
+  (Raft, single node, `tls_disable`). **Not** Helm: `helm.releases.hashicorp.com`
+  returns **403** from this network (both host and cluster), so the chart repo is
+  unusable.
+- Fixed a startup crash: the image entrypoint already appends `-config=/vault/config`,
+  so passing `-config=…/vault.hcl` loaded the listener twice (`bind: address
+  already in use`). The pod now just runs `server`.
+- `vault operator init` (5 shares / 3 threshold) + unseal → **Initialized=true,
+  Sealed=false, HA active**, pod `1/1`. Unseal keys + root token written to
+  `~/.config/tower-cloud/vault-init.json` (0600) — **not** in the repo.
+- Caveat: no auto-unseal → Vault is sealed after each restart (manual unseal).
+
+Sources: `kubectl -n vault`, `flux`, `vault operator`. Secrets not recorded here.
+
+---
+
 ## 2026-10-13 — Flux GitOps bootstrapped
 
 Executed from `archasus`.
