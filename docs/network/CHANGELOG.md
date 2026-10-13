@@ -4,6 +4,50 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — SSO / identity: Keycloak + Postgres + oauth2-proxy
+
+Executed from `archasus` (Ansible + Flux + ESO + Vault).
+
+- **Decision & constraints.** Wanted SSO for all future services. Helm chart
+  repos for Keycloak are blocked from this network (`codecentric/keycloakx` →
+  404, Bitnami → 403), so — like Vault — deployed as **plain manifests via Flux**
+  (Flux applies all YAML under `k8s/` recursively). Images reachable from the
+  cluster: `quay.io/keycloak/keycloak:26.8.1`, `docker.io/library/postgres:18.6`,
+  `quay.io/oauth2-proxy/oauth2-proxy:v7.15.5`, `traefik/whoami:v1.12.0`.
+- **Storage.** New tower iSCSI LUN `postgres` (lun 3, 20 GiB) via
+  `tower_iscsi_volumes`; static PV `tower-iscsi-postgres` + PVC `postgres-data`
+  (ns `keycloak`, StorageClass `tower-iscsi-static`).
+- **Secrets.** Ansible role `vault_config` now generates `secret/keycloak`
+  (`admin_username`, `admin_password`, `db_password`,
+  `oauth2_proxy_client_secret`, `oauth2_proxy_cookie_secret`,
+  `vault_client_secret`, `demo_user`, `demo_user_password`) idempotently
+  (`vault kv patch` — existing values never rotated). ESO renders them into
+  Secrets `keycloak/keycloak-secrets` and `oauth2-proxy/oauth2-proxy-secrets`.
+- **Keycloak 26.8.1** (ns `keycloak`): production `start`, DB=Postgres, hostname
+  `https://keycloak.k8s.lan`, proxy-headers, management port 9000 for health.
+  Realm **`tower`** bootstrapped from a ConfigMap (`--import-realm`) with clients
+  **`vault`** and **`oauth2-proxy`** (each with an audience mapper) and a test
+  user. Client secrets/passwords are injected via Keycloak's `${VAR}`
+  placeholder substitution from the container env — **no secrets in git**.
+  (Note: syntax is `${VAR}`, *not* `${env.VAR}`; and `--import-realm` only
+  imports realms that don't exist yet.)
+- **oauth2-proxy 7.15.5** (ns `oauth2-proxy`, `auth.k8s.lan`): forward-auth for
+  ingress-nginx. Protect any Ingress with `auth-url` →
+  `http://oauth2-proxy.oauth2-proxy.svc.cluster.local:4180/oauth2/auth` and
+  `auth-signin` → `https://auth.k8s.lan/oauth2/start?rd=...`; needs
+  `--cookie-domain=.k8s.lan` so the session cookie is sent to all protected
+  hosts. Demo Ingress `whoami.k8s.lan` verified: unauth → Keycloak login →
+  back-end returns `X-Auth-Request-Email: <user>@k8s.lan`.
+- **Vault OIDC.** `auth/oidc` mounted with `oidc_discovery_url =
+  https://keycloak.k8s.lan/realms/tower`, `oidc_client_id=vault`,
+  `oidc_discovery_ca_pem` = `tower-ca`, role `tower-user`
+  (`bound_audiences=vault`, `user_claim=preferred_username`). Enabled via
+  `ansible-playbook playbooks/vault.yml -e vault_oidc_enable=true`.
+
+Sources: `kubectl`, `flux`, `vault`, `curl`, `ansible`. No secret values here.
+
+---
+
 ## 2026-10-13 — DNS: wildcard `*.k8s.lan` + ingress on all nodes
 
 Executed from `archasus` (Ansible + Flux).

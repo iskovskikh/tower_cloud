@@ -105,7 +105,15 @@ _Updated: 2026-10-13_
       (control-plane toleration). New Ingresses just use `<name>.k8s.lan`.
       Vault moved to `vault.k8s.lan`; `/etc/hosts` hand-fix removed.
 - [ ] media stack (Jellyfin, Transmission) consumed from tower
-- [ ] databases (Postgres) on RWO block
+- [x] **databases** — Postgres 18.6 on a tower iSCSI block LUN (`postgres`, 20 Gi),
+      RWO static PV (`tower-iscsi-postgres`), ns `keycloak`; serves Keycloak
+- [x] **SSO / identity — Keycloak 26.8.1** (ns `keycloak`): Postgres backend,
+      hostname `keycloak.k8s.lan`, bootstrap realm `tower` (clients `vault` +
+      `oauth2-proxy`). `oauth2-proxy` (ns `oauth2-proxy`, `auth.k8s.lan`) gives
+      forward-auth SSO to any Ingress via the `auth-url`/`auth-signin`
+      annotations (demo: `whoami.k8s.lan`). Vault UI logs in via Keycloak OIDC.
+      Secrets generated in Vault (`secret/keycloak`) → ESO. See
+      `docs/identity/README.md`.
 
 ## Phase 5 — reliability
 
@@ -115,6 +123,15 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **SSO / identity live: Keycloak.** Postgres 18.6 (new 20 Gi tower
+  LUN, static PV) backs **Keycloak 26.8.1** (ns `keycloak`, `keycloak.k8s.lan`).
+  Bootstrap realm `tower` (clients `vault`, `oauth2-proxy`; test user) imported
+  from a ConfigMap with secrets injected via `${VAR}` placeholders from Vault.
+  **oauth2-proxy 7.15.5** (`auth.k8s.lan`) protects Ingresses via forward-auth
+  (demo `whoami.k8s.lan`; verified full login → `X-Auth-Request-Email`). Vault UI
+  now uses **OIDC** (`auth/oidc`, role `tower-user`). Secrets auto-generated in
+  Vault (`secret/keycloak`) → ESO; nothing secret in git. Ansible role
+  `vault_config` seeds secrets and (optionally) configures OIDC.
 - 2026-10-13 — **DNS live (`*.k8s.lan`).** Router dnsmasq now serves a wildcard
   for cluster services: role `router_openwrt` writes
   `dhcp.@dnsmasq[0].address='/k8s.lan/<ip>'` for all four nodes (idempotent,
