@@ -31,10 +31,6 @@ vault_app_secrets:
       demo_user: andrey                # fixed (realm test user)
       demo_user_password: null         # generated
       aiskovskikh_password: null       # generated (realm tower user aiskovskikh)
-  - path: transmission
-    keys:
-      rpc_username: transmission       # fixed
-      rpc_password: null               # generated (Transmission web/RPC auth)
 
 # --- Vault OIDC auth against Keycloak (realm "tower") ----------------------
 # Disabled by default: enable after Keycloak is up and the realm is imported:

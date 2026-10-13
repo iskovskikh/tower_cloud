@@ -1,8 +1,7 @@
-# Web UI behind Keycloak SSO (forward-auth) with an internal-CA TLS cert.
-# The RPC endpoint (/transmission/rpc) is exempted from SSO in oauth2-proxy
-# (--skip-auth-route) so API clients/scripts keep working with Transmission's
-# own basic auth (USER/PASS from Vault). Browser users therefore sign in twice
-# (SSO + RPC) — accepted trade-off.
+# Whole-host Keycloak SSO (forward-auth) with an internal-CA TLS cert.
+# Transmission's own RPC auth is disabled (see configmap-settings.yaml), so the
+# browser gets a single login at Keycloak and no Basic prompt. All paths
+# (including /transmission/rpc) sit behind SSO.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -13,10 +12,6 @@ metadata:
     nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy.oauth2-proxy.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://auth.k8s.lan/oauth2/start?rd=$scheme://$host$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "x-auth-request-user, x-auth-request-email"
-    # ingress-nginx does not forward the original URI on the auth subrequest by
-    # default, so oauth2-proxy can't see the path for --skip-auth-route. This
-    # ConfigMap adds X-Forwarded-Uri (origin form) to the auth request only.
-    nginx.ingress.kubernetes.io/auth-proxy-set-headers: "media/transmission-auth-headers"
 spec:
   ingressClassName: nginx
   tls:

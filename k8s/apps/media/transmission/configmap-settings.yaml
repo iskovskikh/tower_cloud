@@ -4,8 +4,9 @@
 #
 # Deviations from the image default: download straight into the library root
 # (/downloads) with no separate incomplete dir and no watch folder, so the
-# layout matches tower's existing /mnt/raid1/share/downloads. USER/PASS/
-# PEERPORT/UMASK themselves are injected by the image from the environment.
+# layout matches tower's existing /mnt/raid1/share/downloads. Authentication is
+# handled entirely by Keycloak SSO at the Ingress, so Transmission's own RPC
+# auth is off (no USER/PASS env either).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -55,7 +56,7 @@ data:
         "ratio-limit": 2,
         "ratio-limit-enabled": false,
         "rename-partial-files": true,
-        "rpc-authentication-required": true,
+        "rpc-authentication-required": false,
         "rpc-bind-address": "0.0.0.0",
         "rpc-enabled": true,
         "rpc-host-whitelist": "",

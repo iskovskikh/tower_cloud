@@ -132,11 +132,10 @@ _Updated: 2026-10-13_
   Tower's media library `/mnt/raid1/share/downloads` is NFS-exported to the
   cluster (role `tower_storage`, `tower_nfs_media_export_dir`) and mounted RWX in
   the pod — same files Jellyfin reads. Config on a dynamic `tower-nfs` PVC,
-  `settings.json` seeded from a ConfigMap. Web UI behind Keycloak SSO;
-  `/transmission/rpc` exempted in oauth2-proxy for API clients (Transmission
-  basic auth). Creds in Vault `secret/transmission` → ESO. No torrent state to
-  migrate (empty). Outbound-only peers for now. Manifests under
-  `k8s/apps/media/transmission/`.
+  `settings.json` seeded from a ConfigMap. Whole host behind **Keycloak SSO**
+  (oauth2-proxy); Transmission RPC auth disabled → single login, no Basic
+  prompt. No torrent state to migrate (empty). Outbound-only peers for now.
+  Manifests under `k8s/apps/media/transmission/`.
 - 2026-10-13 — **SSO / identity live: Keycloak.** Postgres 18.6 (new 20 Gi tower
   LUN, static PV) backs **Keycloak 26.8.1** (ns `keycloak`, `keycloak.k8s.lan`).
   Bootstrap realm `tower` (clients `vault`, `oauth2-proxy`; test user) imported

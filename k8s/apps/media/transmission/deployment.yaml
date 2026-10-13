@@ -47,16 +47,6 @@ spec:
               value: "002"
             - name: PEERPORT
               value: "51413"
-            - name: USER
-              valueFrom:
-                secretKeyRef:
-                  name: transmission-secrets
-                  key: rpc-username
-            - name: PASS
-              valueFrom:
-                secretKeyRef:
-                  name: transmission-secrets
-                  key: rpc-password
           ports:
             - name: rpc
               containerPort: 9091
