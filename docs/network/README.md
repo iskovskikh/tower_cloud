@@ -24,7 +24,7 @@ flowchart TB
     end
 
     subgraph SRV["Servers — 192.168.30.0/24 (routed, static)"]
-        TWR["tower · 192.168.30.200<br/>NAS · Jellyfin · MinIO · SMB/NFS<br/>Transmission · MiniDLNA"]
+        TWR["tower · 192.168.30.200<br/>NAS / СХД · NFS + iSCSI exports<br/>→ k8s cluster"]
         PVE["proxmox · 192.168.30.201<br/>Proxmox VE"]
     end
 
@@ -80,12 +80,14 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 ## Services
 
 ### tower — `192.168.30.200`
-- `22` ssh · `80` nginx 1.28.2 (proxy → Jellyfin at `/web/`) · `443` ❓
-- `8096` Jellyfin 10.11.6 (ServerName `tower`)
-- `9000` MinIO S3 API · `9001` MinIO Console
-- `9091` Transmission RPC · `8200` MiniDLNA 1.3.3
-- `139/445` SMB · `111/2049/20048/…` NFS
-  - export: `/srv/nfs/datasets` → `192.168.1.0/24`
+- `22` ssh · `80` nginx (webserver; Jellyfin proxy site disabled)
+- `2049` NFSv4 — exports `/mnt/raid1/k8s-nfs` and `/mnt/raid1/share/downloads` → k8s
+- `3260` iSCSI (LIO target `iqn.2026-10.lan.tower:k8s`)
+- Media/identity workloads now run in the cluster (see `../../` PLAN / k8s/)
+
+### k8s cluster — `10.10.120.101-104` (VLAN 120)
+- `*.k8s.lan` via ingress-nginx on all nodes — e.g. `https://jellyfin.k8s.lan`,
+  `https://transmission.k8s.lan`, `https://keycloak.k8s.lan`, `https://vault.k8s.lan`
 
 ### proxmox — `192.168.30.201`
 - `22` ssh · `111` rpcbind · `3128` SPICE proxy · `8006` Proxmox web UI
@@ -99,11 +101,9 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 ssh root@192.168.1.1            # router (OpenWrt)          [creds: external]
 ssh tower                        # NAS  (resolves to tower.lan → 192.168.30.200)
 ssh arch@192.168.30.201          # proxmox
-http://tower.lan/                # Jellyfin (via nginx)
-http://192.168.30.200:9001/      # MinIO console
+https://jellyfin.k8s.lan/        # Jellyfin (k8s, ns media)
 https://192.168.30.201:8006/     # Proxmox UI
-# mount datasets:
-sudo mount tower:/srv/nfs/datasets /mnt/datasets
+# NFS export is consumed by the k8s cluster, not mounted on workstations
 ```
 
 Credentials are **not** stored in this repo. Keep them in your password manager

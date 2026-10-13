@@ -104,11 +104,13 @@ _Updated: 2026-10-13_
       `router_openwrt`) → all 4 node IPs; ingress-nginx runs on every node
       (control-plane toleration). New Ingresses just use `<name>.k8s.lan`.
       Vault moved to `vault.k8s.lan`; `/etc/hosts` hand-fix removed.
-- [~] media stack — **Transmission moved to k8s** (ns `media`,
-      `transmission.k8s.lan`, LSIO 4.1.3) writing tower's
-      `/mnt/raid1/share/downloads` over NFS (RWX, shared with Jellyfin). Web UI
-      behind SSO; `/transmission/rpc` uses app basic auth. Remaining: **Jellyfin**
-      still on tower (Docker) — migrate next.
+- [x] media stack — **Transmission** (ns `media`, `transmission.k8s.lan`, LSIO
+      4.1.3) and **Jellyfin 10.11.6** (ns `media`, `jellyfin.k8s.lan`) both in
+      k8s, sharing tower's `/mnt/raid1/share/downloads` over NFS (RWX). Jellyfin
+      `/config` on a dedicated tower iSCSI LUN (lun 4, `tower-iscsi-jellyfin`);
+      browser UI behind SSO, HTTP API + `/socket` left open for native clients.
+      **No GPU on the nodes → software transcoding only** — GPU passthrough is a
+      follow-up.
 - [x] **databases** — Postgres 18.6 on a tower iSCSI block LUN (`postgres`, 20 Gi),
       RWO static PV (`tower-iscsi-postgres`), ns `keycloak`; serves Keycloak
 - [x] **SSO / identity — Keycloak 26.8.1** (ns `keycloak`): Postgres backend,
@@ -127,6 +129,16 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Jellyfin moved from tower to k8s** (ns `media`,
+  `https://jellyfin.k8s.lan`, `jellyfin/jellyfin:10.11.6`). `/config`
+  (metadata + SQLite) migrated onto a dedicated tower iSCSI LUN (`jellyfin`,
+  lun 4, 20 GiB, static PV `tower-iscsi-jellyfin`); `/cache` is `emptyDir`;
+  media is the shared tower NFS export at `/media`. Browser UI (`/web`) behind
+  **Keycloak SSO**; the HTTP API + `/socket` stay open for native clients
+  (two Ingresses on one host). **No `/dev/dri` on the nodes → software
+  transcoding only** (tower's Intel VAAPI HW transcode retired). Tower's Docker
+  container + nginx Jellyfin site stopped. Manifests
+  `k8s/apps/media/jellyfin/`; LUN added to `ansible/roles/tower_storage`.
 - 2026-10-13 — **Transmission moved from tower to k8s** (ns `media`,
   `https://transmission.k8s.lan`, `ghcr.io/linuxserver/transmission:4.1.3`).
   Tower's media library `/mnt/raid1/share/downloads` is NFS-exported to the

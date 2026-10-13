@@ -1,0 +1,62 @@
+# Two Ingresses on one host — the same "external auth" pattern oauth2-proxy
+# documents: one object carries the forward-auth annotations, another serves
+# the rest of the host untouched. Here only the browser web UI (/web) is behind
+# Keycloak; every other path is left open so the Jellyfin HTTP API (/System,
+# /Users, /Items, /Videos, ...) and the /socket websocket keep working for
+# native clients (Android TV, iOS/tvOS, Kodi, ...), which cannot do a browser
+# SSO redirect and use Jellyfin's own authentication.
+#
+# The root `/` just 302-redirects to /web, so protecting /web is enough to put
+# the UI behind SSO. caveat: the browser then also logs into Jellyfin itself
+# (double login) — acceptable for now; header-based auto-login is a follow-up.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jellyfin
+  namespace: media
+  annotations:
+    cert-manager.io/cluster-issuer: tower-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - jellyfin.k8s.lan
+      secretName: jellyfin-tls
+  rules:
+    - host: jellyfin.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jellyfin
+                port:
+                  number: 8096
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jellyfin-web
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy.oauth2-proxy.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://auth.k8s.lan/oauth2/start?rd=$scheme://$host$request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "x-auth-request-user, x-auth-request-email"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - jellyfin.k8s.lan
+      secretName: jellyfin-tls
+  rules:
+    - host: jellyfin.k8s.lan
+      http:
+        paths:
+          - path: /web
+            pathType: Prefix
+            backend:
+              service:
+                name: jellyfin
+                port:
+                  number: 8096

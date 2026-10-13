@@ -91,10 +91,10 @@ fi
 
 section "service probes"
 printf '  tower   nginx :80      %s\n' "$(curl -s -m4 -o /dev/null -w '%{http_code}' http://192.168.30.200/ 2>/dev/null)"
-printf '  tower   jellyfin       %s\n' "$(curl -s -m4 -o /dev/null -w '%{http_code}' http://192.168.30.200:8096/health 2>/dev/null)"
+printf '  k8s     jellyfin       %s\n' "$(curl -sk -m4 -o /dev/null -w '%{http_code}' https://jellyfin.k8s.lan/health 2>/dev/null)"
 printf '  tower   minio console  %s\n' "$(curl -s -m4 -o /dev/null -w '%{http_code}' http://192.168.30.200:9001/ 2>/dev/null)"
 printf '  proxmox web :8006      %s\n' "$(curl -sk -m4 -o /dev/null -w '%{http_code}' https://192.168.30.201:8006/ 2>/dev/null)"
-info="$(curl -s -m4 http://192.168.30.200:8096/System/Info/Public 2>/dev/null)"
+info="$(curl -sk -m4 https://jellyfin.k8s.lan/System/Info/Public 2>/dev/null)"
 [ -n "$info" ] && printf '  jellyfin info: %s\n' "$info"
 
 if have showmount; then

@@ -81,14 +81,15 @@ hosts:
     mac: null
     os: Arch Linux (kernel 7.2.9-arch1-1)
     notes: >
-      Primary storage / media server. Jellyfin 10.11.6 (ServerName "tower"),
-      MiniDLNA, nginx reverse proxy. MinIO, SMB and NFS were removed on
-      2026-10-12 (see CHANGELOG). Jellyfin runs as a Docker container
-      (jellyfin/jellyfin:10.11.6), mounting /mnt/raid1/share/downloads.
-      Transmission moved to k8s on 2026-10-13 (ns media, transmission.k8s.lan);
-      the tower system unit was already stopped+disabled. The media library
-      /mnt/raid1/share/downloads is NFS-exported to the cluster (RWX) so the pod
-      and Jellyfin share the exact same files.
+      Primary storage / media server. MiniDLNA, nginx reverse proxy. MinIO, SMB
+      and NFS were removed on 2026-10-12 (see CHANGELOG). Jellyfin 10.11.6 ran as
+      a Docker container (jellyfin/jellyfin:10.11.6), mounting
+      /mnt/raid1/share/downloads — **migrated to k8s on 2026-10-13** (ns media,
+      jellyfin.k8s.lan; container stopped and tower's nginx Jellyfin site
+      disabled). Transmission moved to k8s on 2026-10-13 (ns media,
+      transmission.k8s.lan); the tower system unit was already stopped+disabled.
+      The media library /mnt/raid1/share/downloads is NFS-exported to the cluster
+      (RWX) so Transmission and Jellyfin share the exact same files.
       Data array /mnt/raid1 — native mdadm RAID1 md0 (sdb+sdc, Toshiba N300
       HDWG440 4 TB, metadata 1.0, internal bitmap); converted from Intel IMSM
       fakeraid 2026-10-13 (see CHANGELOG).
@@ -99,12 +100,12 @@ hosts:
       tower_storage; see docs/storage/plan.md.
     services:
       - {port: 22, proto: tcp, service: ssh}
-      - {port: 80, proto: tcp, service: "nginx 1.30.5 (reverse proxy -> Jellyfin)"}
-      - {port: 8096, proto: tcp, service: "Jellyfin 10.11.6 (Docker container)"}
+      - {port: 80, proto: tcp, service: "nginx 1.30.5 (webserver; Jellyfin proxy site disabled)"}
       - {port: 2049, proto: tcp, service: "NFSv4 server — exports /mnt/raid1/k8s-nfs (RWX) and /mnt/raid1/share/downloads (media library) -> k8s"}
       - {port: 3260, proto: tcp, service: "iSCSI LIO target iqn.2026-10.lan.tower:k8s (configfs)"}
     disabled_services:
       - "MiniDLNA (8200) — stopped + disabled 2026-10-13"
+      - "Jellyfin (8096) — Docker container stopped 2026-10-13; migrated to k8s (ns media, jellyfin.k8s.lan)"
     removed_services:
       - "MinIO (9000/9001) — container+image+data removed 2026-10-12"
       - "SMB (139/445) — samba uninstalled 2026-10-12"
@@ -206,7 +207,11 @@ kubernetes:
     (`https://transmission.k8s.lan`, linuxserver image) writes to tower's
     `/mnt/raid1/share/downloads` over NFS (RWX), shared with Jellyfin. Whole
     host behind Keycloak SSO; Transmission RPC auth disabled (single login).
-    Jellyfin itself still runs on tower (to be migrated later).
+    **Jellyfin 10.11.6** also in ns `media` (`https://jellyfin.k8s.lan`):
+    `/config` on a dedicated tower iSCSI LUN (RWO static PV `tower-iscsi-jellyfin`,
+    lun 4), same NFS export mounted at `/media`. Browser UI (`/web`) behind
+    Keycloak SSO; the HTTP API and `/socket` are left open for native clients
+    (Android TV, iOS, Kodi). Nodes have no `/dev/dri` → software transcoding only.
     **Memory (2026-10-13):** proxmox has only 16 GB, so 4×4 GB over-commits.
     Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
     balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and

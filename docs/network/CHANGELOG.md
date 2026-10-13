@@ -4,6 +4,39 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Jellyfin migrated from tower to k8s (media)
+
+Executed from `archasus` (Ansible + Flux).
+
+- **Moved service.** Jellyfin 10.11.6 now runs in k8s (ns `media`,
+  `https://jellyfin.k8s.lan`) instead of the tower Docker container
+  (`jellyfin/jellyfin:10.11.6`, stopped 2026-10-13; tower's nginx
+  `jellyfin.conf` site disabled). Same image version as tower.
+- **Data stays on tower.** The library export `/mnt/raid1/share/downloads` is
+  mounted RWX at `/media` (new PV `tower-nfs-media-jellyfin` over the same
+  export Transmission uses). Jellyfin's `/config` (metadata + SQLite DBs, 164 MB
+  on tower) is migrated onto a **dedicated tower iSCSI LUN** (`jellyfin`, lun 4,
+  20 GiB; PV `tower-iscsi-jellyfin`) — SQLite needs real locking, so block not
+  NFS. `/cache` (transcodes) is an `emptyDir` and regenerates.
+- **Config migration.** Seed pod mounts the `jellyfin-config` PVC; the existing
+  `/home/arch/docker/jellifin/config` tree is streamed in with
+  `ssh tower 'tar -C … -cf - .' | kubectl exec -i … -- tar -xpf -` (numeric
+  owners preserved, then `chown -R 1000:1000`). No library rescan needed.
+- **Access.** Browser UI (`/web`) behind **Keycloak SSO** (oauth2-proxy
+  forward-auth), TLS `tower-ca`. Every other path — the Jellyfin HTTP API
+  (`/System`, `/Users`, `/Items`, `/Videos`, …) and the `/socket` websocket — is
+  deliberately **left open** (two Ingresses on one host) so native clients
+  (Android TV, iOS/tvOS, Kodi) keep using Jellyfin's own auth. Caveat: the
+  browser then also logs into Jellyfin itself (double login).
+- **Transcoding.** The k8s nodes have **no `/dev/dri`** (Proxmox VMs, no GPU
+  passthrough), so the Intel VAAPI hardware transcoding tower used is gone —
+  **software transcoding only** (direct play unaffected). GPU passthrough is a
+  follow-up.
+
+Sources: `k8s/apps/media/jellyfin/`, `ansible/roles/tower_storage`.
+
+---
+
 ## 2026-10-13 — Fix: 502 on oauth2-proxy OIDC callback (nginx header buffer)
 
 - **Symptom.** Logging into an SSO-protected app failed with **502 Bad Gateway**
