@@ -17,6 +17,10 @@ spec:
       labels:
         app: jellyfin
     spec:
+      # Jellyfin's ServerName is unset in the migrated config, so it falls back
+      # to the machine hostname — pin it so clients always see "jellyfin"
+      # instead of a random pod name.
+      hostname: jellyfin
       # Same identity the tower container ran as (compose `user: 1000:1000`
       # = arch:sambashare). fsGroup keeps the emptyDir /cache and the ext4
       # /config volume writable; media is world-readable on the tower export.
