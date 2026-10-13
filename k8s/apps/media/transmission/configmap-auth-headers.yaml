@@ -1,0 +1,12 @@
+# Headers added to the oauth2-proxy auth subrequest for the transmission Ingress
+# (via nginx.ingress.kubernetes.io/auth-proxy-set-headers, which avoids enabling
+# arbitrary snippet annotations on the controller). X-Forwarded-Uri lets
+# oauth2-proxy match --skip-auth-route=^/transmission/rpc against the original
+# path instead of /oauth2/auth.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: transmission-auth-headers
+  namespace: media
+data:
+  X-Forwarded-Uri: "$request_uri"
