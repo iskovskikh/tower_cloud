@@ -4,6 +4,30 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — External Secrets Operator + Vault k8s-auth (secrets chain live)
+
+Executed from `archasus` (Flux + `kubectl`/`vault`).
+
+- Deployed **External Secrets Operator v2.12.0** via Flux (HelmRepository
+  `charts.external-secrets.io` + HelmRelease; namespace `external-secrets`).
+- Granted the Vault server SA `system:auth-delegator` (ClusterRoleBinding
+  `vault-auth-delegator`) so it can call TokenReview.
+- Configured Vault out-of-band (root token): KV-v2 at `secret/`, enabled the
+  **kubernetes** auth method, wrote policy `eso-read`
+  (`secret/data/*`, `secret/metadata/*`) and role `eso` bound to SA
+  `external-secrets` in namespace `external-secrets`; wrote test secret
+  `secret/demo`.
+- `ClusterSecretStore` `vault` → **Ready** ("store validated"); demo
+  `ExternalSecret` `default/vault-demo` → **SecretSynced**; Secret created with
+  keys `username`/`password` (values verified: `admin` / `please-rotate-me`).
+- Caveat: the Vault auth/policy/role setup is imperative (one-off commands), not
+  yet in Git; manual unseal still required after restarts.
+
+Sources: `kubectl`, `flux`, `vault` inside `vault-0`. Root token/unseal keys
+kept off-repo (`~/.config/tower-cloud/vault-init.json`).
+
+---
+
 ## 2026-10-13 — Vault (Raft) deployed on tower iSCSI block via Flux
 
 Executed from `archasus` (Flux GitOps).

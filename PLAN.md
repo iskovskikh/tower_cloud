@@ -59,7 +59,12 @@ _Updated: 2026-10-13_
       outside the repo (`~/.config/tower-cloud/vault-init.json`, 0600).
 - [?] auto-unseal: **none yet** — Vault is sealed after every restart, unseal by
       hand (or wire a transit/KMS seal later)
-- [ ] External Secrets Operator + Vault kubernetes auth + first `ExternalSecret`
+- [x] **External Secrets Operator v2.12.0** via Flux (Helm, namespace
+      `external-secrets`); Vault kubernetes-auth role `eso`; `ClusterSecretStore`
+      `vault` validated; first `ExternalSecret` synced (`secret/demo` →
+      Secret `default/vault-demo`)
+- [ ] Vault auth/policy/role provisioning is **imperative** (one-off `vault`
+      commands, not in Git) — codify later (e.g. Vault provider / bank-vaults)
 
 ## Phase 4 — workloads
 
@@ -76,6 +81,13 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Secrets chain live (Phase 3): Vault → ESO → Secret.**
+  External Secrets Operator v2.12.0 deployed via Flux (Helm). Vault configured
+  out-of-band: KV-v2 at `secret/`, kubernetes auth method, policy `eso-read`,
+  role `eso` (SA `external-secrets/external-secrets`). `ClusterSecretStore`
+  `vault` = Ready; demo `ExternalSecret` synced `secret/demo` → Secret
+  `default/vault-demo` (verified values). Caveat: Vault auth/policy/role are set
+  imperatively (not yet codified); demo ExternalSecret kept as a living example.
 - 2026-10-13 — **Vault live (Phase 3).** Deployed via Flux as plain manifests
   (Helm repo blocked, 403): single-node Raft on a dedicated tower iSCSI LUN
   (`vault`, lun 1), static PV + `tower-iscsi-static` StorageClass. Initialized
