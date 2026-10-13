@@ -20,10 +20,9 @@ tower_iscsi_iqn: "iqn.2026-10.lan.tower:k8s"
 tower_iscsi_portal_ip: "0.0.0.0"
 tower_iscsi_portal_port: 3260
 tower_iscsi_volumes:
-  - name: vol1
-    size: 10G
-  - name: vault
-    size: 10G
+  - { name: vol1,   size: 10G }   # lun 0
+  - { name: vault,  size: 10G }   # lun 1
+  - { name: garage, size: 50G }   # lun 2 (S3 object store)
 # Explicit initiator IQNs. Empty => dynamic ACLs (any initiator may attach) —
 # fine for the PoC, tighten before production.
 tower_iscsi_initiators: []
