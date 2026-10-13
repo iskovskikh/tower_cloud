@@ -23,6 +23,7 @@ tower_iscsi_volumes:
   - { name: vol1,   size: 10G }   # lun 0
   - { name: vault,  size: 10G }   # lun 1
   - { name: garage, size: 50G }   # lun 2 (S3 object store)
+  - { name: postgres, size: 20G } # lun 3 (Keycloak / identity DB)
 # Explicit initiator IQNs. Empty => dynamic ACLs (any initiator may attach) —
 # fine for the PoC, tighten before production.
 tower_iscsi_initiators: []

@@ -1,0 +1,35 @@
+# Keycloak database: dedicated iSCSI LUN on tower (backstore "postgres" =
+# lun 3, 20 GiB) — RWO block, static PV (StorageClass tower-iscsi-static).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tower-iscsi-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: tower-iscsi-static
+  iscsi:
+    targetPortal: 192.168.30.200:3260
+    iqn: iqn.2026-10.lan.tower:k8s
+    lun: 3
+    fsType: ext4
+    readOnly: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: keycloak
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: tower-iscsi-static
+  volumeName: tower-iscsi-postgres
+  resources:
+    requests:
+      storage: 20Gi

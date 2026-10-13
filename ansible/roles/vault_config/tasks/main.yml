@@ -63,3 +63,87 @@
   register: vault_config_run
   changed_when: "'CHANGED' in vault_config_run.stdout"
   no_log: true
+
+# Application secrets (Keycloak DB/admin/SSO passwords). Generated once here and
+# consumed by External Secrets — never stored in git. Missing keys are filled in
+# with `vault kv patch`, so existing (in-use) values are never rotated.
+- name: vault_config | seed application secrets
+  ansible.builtin.shell:
+    cmd: |
+      kubectl -n {{ vault_namespace }} exec -i {{ vault_pod }} -c {{ vault_container }} -- \
+        env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" sh -s <<'EOS'
+      set -eu
+      changed=0
+      {% for s in vault_app_secrets %}
+      path='{{ s.path }}'; missing=''
+      {% for k in s['keys'].keys() %}
+      vault kv get -field='{{ k }}' "{{ vault_kv_mount }}/$path" >/dev/null 2>&1 || missing="$missing {{ k }}"
+      {% endfor %}
+      if [ -n "$missing" ]; then
+        args=''
+        for k in $missing; do
+          case "$k" in
+          {% for k, v in s['keys'].items() %}
+          {{ k }}) v='{{ v if v is not none else (lookup('pipe', 'openssl rand -base64 32')) }}';;
+          {% endfor %}
+          *) v="$(openssl rand -base64 32)";;
+          esac
+          args="$args $k=$v"
+        done
+        if vault kv get "{{ vault_kv_mount }}/$path" >/dev/null 2>&1; then
+          vault kv patch "{{ vault_kv_mount }}/$path" $args >/dev/null
+        else
+          vault kv put "{{ vault_kv_mount }}/$path" $args >/dev/null
+        fi
+        changed=1
+      fi
+      {% endfor %}
+      if [ "$changed" = 1 ]; then echo CHANGED; else echo OK; fi
+      EOS
+  environment:
+    VAULT_TOKEN: "{{ vault_admin_token }}"
+  register: vault_seed
+  changed_when: "'CHANGED' in vault_seed.stdout"
+  no_log: true
+
+# Vault OIDC login via Keycloak (realm "tower"). Disabled by default; enable
+# after Keycloak is running and the realm has been imported.
+- name: vault_config | read the internal CA (for OIDC discovery TLS)
+  ansible.builtin.command:
+    cmd: kubectl -n cert-manager get secret tower-ca -o jsonpath={.data.ca\.crt}
+  register: vault_tower_ca_b64
+  changed_when: false
+  when: vault_oidc_enable | bool
+
+- name: vault_config | configure OIDC auth (Keycloak)
+  ansible.builtin.shell:
+    cmd: |
+      kubectl -n {{ vault_namespace }} exec -i {{ vault_pod }} -c {{ vault_container }} -- \
+        env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" TOWER_CA_PEM="$TOWER_CA_PEM" sh -s <<'EOS'
+      set -eu
+      changed=0
+      if ! vault auth list -format=json 2>/dev/null | grep -q '"{{ vault_oidc_mount }}/"'; then
+        vault auth enable {{ vault_oidc_mount }} >/dev/null; changed=1
+      fi
+      CS="$(vault kv get -field=vault_client_secret {{ vault_kv_mount }}/keycloak)"
+      vault write auth/{{ vault_oidc_mount }}/config \
+        oidc_discovery_url="{{ vault_oidc_discovery_url }}" \
+        oidc_client_id="{{ vault_oidc_client_id }}" \
+        oidc_client_secret="$CS" \
+        oidc_discovery_ca_pem="$TOWER_CA_PEM" \
+        default_role="{{ vault_oidc_role }}" >/dev/null
+      vault write auth/{{ vault_oidc_mount }}/role/{{ vault_oidc_role }} \
+        bound_audiences="{{ vault_oidc_client_id }}" \
+        user_claim=preferred_username \
+        oidc_scopes=openid,profile,email \
+        policies={{ vault_oidc_default_policy }} \
+        allowed_redirect_uris={% for u in vault_oidc_allowed_redirect_uris %}"{{ u }}" {% endfor %} >/dev/null
+      if [ "$changed" = 1 ]; then echo CHANGED; else echo OK; fi
+      EOS
+  environment:
+    VAULT_TOKEN: "{{ vault_admin_token }}"
+    TOWER_CA_PEM: "{{ vault_tower_ca_b64.stdout | b64decode }}"
+  when: vault_oidc_enable | bool
+  register: vault_oidc_run
+  changed_when: "'CHANGED' in vault_oidc_run.stdout"
+  no_log: true

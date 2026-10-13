@@ -1,0 +1,123 @@
+# Bootstrap realm "tower" imported by Keycloak on first start (--import-realm).
+#
+# No secrets live here: Keycloak substitutes ${env.*} from the container
+# environment (fed by the keycloak-secrets ExternalSecret). NOTE: import only
+# applies to realms that do not exist yet — later realm changes must be applied
+# through the admin console/API (realm-as-code is a follow-up).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: keycloak
+data:
+  tower-realm.json: |
+    {
+      "realm": "tower",
+      "enabled": true,
+      "displayName": "tower cloud",
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": false,
+      "editUsernameAllowed": false,
+      "accessTokenLifespan": 3600,
+      "ssoSessionIdleTimeout": 1800,
+      "ssoSessionMaxLifespan": 36000,
+      "roles": {
+        "realm": [
+          { "name": "admin" },
+          { "name": "user" }
+        ]
+      },
+      "groups": [
+        { "name": "admins" },
+        { "name": "users" }
+      ],
+      "clients": [
+        {
+          "clientId": "vault",
+          "name": "Vault",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": "${env.VAULT_CLIENT_SECRET}",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "redirectUris": [
+            "https://vault.k8s.lan/ui/vault/auth/oidc/oidc/callback",
+            "http://localhost:8250/oidc/callback"
+          ],
+          "webOrigins": [
+            "https://vault.k8s.lan"
+          ],
+          "protocolMappers": [
+            {
+              "name": "audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.client.audience": "vault",
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": "oauth2-proxy",
+          "name": "oauth2-proxy",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": "${env.OAUTH2_PROXY_CLIENT_SECRET}",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "redirectUris": [
+            "https://auth.k8s.lan/oauth2/callback"
+          ],
+          "webOrigins": [
+            "https://auth.k8s.lan"
+          ],
+          "protocolMappers": [
+            {
+              "name": "audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.client.audience": "oauth2-proxy",
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": "${env.KEYCLOAK_DEMO_USER}",
+          "enabled": true,
+          "email": "${env.KEYCLOAK_DEMO_USER}@k8s.lan",
+          "emailVerified": true,
+          "firstName": "Andrey",
+          "lastName": "User",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "${env.KEYCLOAK_DEMO_USER_PASSWORD}",
+              "temporary": false
+            }
+          ],
+          "groups": [
+            "/users"
+          ],
+          "realmRoles": [
+            "user"
+          ]
+        }
+      ]
+    }

@@ -1,0 +1,25 @@
+# Sign-in / callback endpoint for oauth2-proxy (browser-facing).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oauth2-proxy
+  namespace: oauth2-proxy
+  annotations:
+    cert-manager.io/cluster-issuer: tower-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - auth.k8s.lan
+      secretName: oauth2-proxy-tls
+  rules:
+    - host: auth.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: oauth2-proxy
+                port:
+                  number: 4180

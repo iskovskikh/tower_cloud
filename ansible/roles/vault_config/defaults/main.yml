@@ -14,3 +14,32 @@ vault_eso_role: eso
 vault_eso_sa_name: external-secrets
 vault_eso_sa_namespace: external-secrets
 vault_eso_role_ttl: 1h
+
+# --- Application secrets (generated here, consumed by ESO) -----------------
+# Random values are generated once and never stored in git. `vault kv patch`
+# fills in any missing keys, so re-runs are idempotent and never rotate a
+# value that is already in use.
+vault_app_secrets:
+  - path: keycloak
+    keys:
+      admin_username: kcadmin          # fixed
+      admin_password: null             # generated
+      db_password: null                # generated
+      oauth2_proxy_client_secret: null # generated
+      oauth2_proxy_cookie_secret: null # generated
+      vault_client_secret: null        # generated
+      demo_user: andrey                # fixed (realm test user)
+      demo_user_password: null         # generated
+
+# --- Vault OIDC auth against Keycloak (realm "tower") ----------------------
+# Disabled by default: enable after Keycloak is up and the realm is imported:
+#   ansible-playbook playbooks/vault.yml -e vault_oidc_enable=true
+vault_oidc_enable: false
+vault_oidc_mount: oidc
+vault_oidc_role: tower-user
+vault_oidc_client_id: vault
+vault_oidc_discovery_url: "https://keycloak.k8s.lan/realms/tower"
+vault_oidc_allowed_redirect_uris:
+  - "https://vault.k8s.lan/ui/vault/auth/oidc/oidc/callback"
+  - "http://localhost:8250/oidc/callback"
+vault_oidc_default_policy: default

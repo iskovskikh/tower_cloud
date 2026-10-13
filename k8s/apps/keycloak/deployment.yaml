@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.8.1
+          args:
+            - start
+            - --import-realm
+            - --http-enabled=true
+            - --proxy-headers=xforwarded
+            - --health-enabled=true
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://postgres:5432/keycloak
+            - name: KC_DB_USERNAME
+              value: keycloak
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: db-password
+            - name: KC_HOSTNAME
+              value: https://keycloak.k8s.lan
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: admin-username
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: admin-password
+            # Consumed by the realm import via ${env.*} substitution.
+            - name: VAULT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: vault-client-secret
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: oauth2-proxy-client-secret
+            - name: KEYCLOAK_DEMO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: demo-user
+            - name: KEYCLOAK_DEMO_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: demo-user-password
+            - name: JAVA_OPTS_APPEND
+              value: -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1200Mi
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
