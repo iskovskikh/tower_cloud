@@ -118,6 +118,25 @@ data:
           "realmRoles": [
             "user"
           ]
+        },
+        {
+          "username": "aiskovskikh",
+          "enabled": true,
+          "email": "aiskovskikh@k8s.lan",
+          "emailVerified": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "${KEYCLOAK_AISKOVSKIKH_PASSWORD}",
+              "temporary": true
+            }
+          ],
+          "groups": [
+            "/users"
+          ],
+          "realmRoles": [
+            "user"
+          ]
         }
       ]
     }

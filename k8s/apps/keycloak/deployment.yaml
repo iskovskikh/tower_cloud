@@ -76,6 +76,11 @@ spec:
                 secretKeyRef:
                   name: keycloak-secrets
                   key: demo-user-password
+            - name: KEYCLOAK_AISKOVSKIKH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: aiskovskikh-password
             - name: JAVA_OPTS_APPEND
               value: -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20
           volumeMounts:

@@ -1,0 +1,10 @@
+---
+# Reconcile Keycloak realm users (realm-as-code). Idempotent; passwords come from
+# Vault via the keycloak-secrets ExternalSecret. Run after vault.yml so the
+# secret exists (and after Keycloak is up).
+- name: Keycloak — users (realm-as-code)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - keycloak_config

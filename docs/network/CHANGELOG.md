@@ -4,6 +4,21 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Keycloak: realm-as-code user management + user `aiskovskikh`
+
+- Added Ansible role **`keycloak_config`** (`playbooks/keycloak.yml`):
+  reconciles realm `tower` users idempotently via the Keycloak **Admin REST
+  API** (runs on the control host; stdlib-only Python). Declared users live in
+  the role defaults; passwords live in Vault (`secret/keycloak`) → ESO
+  (`keycloak-secrets`). A password is only set when the user is **created**
+  (`temporary: true`, forced change on first login) — never reset afterwards.
+- Created user **`aiskovskikh`** (realm `tower`): role `user`, group `/users`.
+  Password generated in Vault key `aiskovskikh_password`; also added to the
+  bootstrap realm ConfigMap for fresh installs.
+- (Realm clients are still console-managed; only users are codified so far.)
+
+---
+
 ## 2026-10-13 — Transmission migrated from tower to k8s (media)
 
 Executed from `archasus` (Ansible + Flux). Applied 2026-10-13.

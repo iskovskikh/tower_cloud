@@ -25,6 +25,7 @@ k8s/apps/keycloak/             # Namespace, ExternalSecret, realm ConfigMap,
 k8s/apps/oauth2-proxy/         # Namespace, ExternalSecret, Deployment, Service,
                                # Ingress (auth.k8s.lan) + demo whoami app
 ansible/roles/vault_config/    # seeds secret/keycloak; configures Vault OIDC
+ansible/roles/keycloak_config/ # reconciles realm users (Admin REST API)
 ```
 
 ## Admin access
@@ -39,6 +40,22 @@ vault kv get -field=admin_password secret/keycloak
 
 A non-admin test user exists in realm `tower` (`demo_user` /
 `demo_user_password` in Vault) — used by the SSO demo.
+
+## Manage users (realm-as-code)
+
+Users are reconciled idempotently by the Ansible role `keycloak_config`
+(`playbooks/keycloak.yml`) via the Keycloak Admin REST API. Declare them in
+`ansible/roles/keycloak_config/defaults/main.yml` (`keycloak_users`), store the
+password in Vault (`secret/keycloak`, seeded by `vault_config`), and run:
+
+```bash
+cd ansible && ansible-playbook playbooks/keycloak.yml
+```
+
+The password is only set when the user is **first created** (with
+`temporary: true`, so Keycloak forces a change on first login) — a password the
+user later chooses is never overwritten. Currently declared: `aiskovskikh`
+(role `user`, group `/users`).
 
 ## Protect a service with SSO (forward-auth)
 

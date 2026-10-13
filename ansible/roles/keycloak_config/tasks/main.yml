@@ -1,0 +1,35 @@
+---
+# Reconciles Keycloak realm users. Idempotent: existing users are left as-is
+# (their password is never reset), missing users are created, and role/group
+# membership is ensured. Run on the control host — only the stdlib is needed.
+
+- name: keycloak_config | read the Keycloak admin Secret
+  ansible.builtin.command:
+    cmd: kubectl -n {{ keycloak_secret_namespace }} get secret {{ keycloak_secret_name }} -o json
+  register: kc_secret
+  changed_when: false
+  no_log: true
+
+- name: keycloak_config | build the user list (inject passwords from the Secret)
+  ansible.builtin.set_fact:
+    kc_users: >-
+      {{ kc_users | default([]) + [ item | combine({'password': ((kc_secret.stdout | from_json).data[item.password_secret_key] | b64decode)}) ] }}
+  loop: "{{ keycloak_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  no_log: true
+
+- name: keycloak_config | reconcile users
+  ansible.builtin.command:
+    cmd: "python3 {{ role_path }}/files/keycloak_reconcile.py"
+  environment:
+    KC_URL: "{{ keycloak_url }}"
+    KC_ADMIN_REALM: "{{ keycloak_admin_realm }}"
+    KC_REALM: "{{ keycloak_realm }}"
+    KC_ADMIN_USER: "{{ ((kc_secret.stdout | from_json).data[keycloak_admin_username_key]) | b64decode }}"
+    KC_ADMIN_PASS: "{{ ((kc_secret.stdout | from_json).data[keycloak_admin_password_key]) | b64decode }}"
+    KC_INSECURE: "{{ 'false' if keycloak_validate_certs | bool else 'true' }}"
+    KC_USERS: "{{ kc_users | to_json }}"
+  register: kc_run
+  changed_when: "'CHANGED' in kc_run.stdout"
+  no_log: true

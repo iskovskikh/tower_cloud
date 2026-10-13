@@ -1,0 +1,30 @@
+---
+# Codified Keycloak users (realm "tower"). Applied idempotently by the role via
+# the Admin REST API; passwords are generated in Vault (role vault_config) and
+# read from the keycloak-secrets ExternalSecret. A password is only set when the
+# user is first created (temporary=true => Keycloak forces a change on first
+# login), so a password the user later chooses is never overwritten.
+
+keycloak_url: "https://keycloak.k8s.lan"
+keycloak_realm: tower
+keycloak_admin_realm: master
+keycloak_admin_client: admin-cli
+keycloak_secret_namespace: keycloak
+keycloak_secret_name: keycloak-secrets
+keycloak_admin_username_key: admin-username
+keycloak_admin_password_key: admin-password
+# The internal CA (tower-ca) is not in the control host's trust store; this is a
+# LAN-only admin call, so verification is skipped (as oauth2-proxy also does).
+keycloak_validate_certs: false
+
+keycloak_users:
+  - username: aiskovskikh
+    email: aiskovskikh@k8s.lan
+    first_name: ""
+    last_name: ""
+    enabled: true
+    email_verified: true
+    groups: ["/users"]
+    realm_roles: ["user"]
+    password_secret_key: aiskovskikh-password
+    temporary: true

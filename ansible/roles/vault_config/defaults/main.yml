@@ -30,6 +30,7 @@ vault_app_secrets:
       vault_client_secret: null        # generated
       demo_user: andrey                # fixed (realm test user)
       demo_user_password: null         # generated
+      aiskovskikh_password: null       # generated (realm tower user aiskovskikh)
   - path: transmission
     keys:
       rpc_username: transmission       # fixed
