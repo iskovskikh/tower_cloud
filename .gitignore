@@ -1,0 +1,20 @@
+# --- OpenTofu / Terraform ---
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+
+# --- Ansible ---
+*.retry
+ansible/inventory/hosts.local.yml
+
+# --- secrets (never commit plaintext) ---
+*.plain.yaml
+*.plain.yml
+.env
+*.pem
+*.key
