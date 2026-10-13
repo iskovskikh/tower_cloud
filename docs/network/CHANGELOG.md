@@ -4,6 +4,182 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — tower block storage validated from a pod (Phase 1)
+
+Executed from `archasus` (Ansible + `kubectl`).
+
+- Installed **open-iscsi** on `k8s-node-1..4` (role `k8s_iscsi_initiator`,
+  playbook `playbooks/k8s-storage.yml`): `iscsid` enabled, discovered
+  `192.168.30.200:3260`, logged in to `iqn.2026-10.lan.tower:k8s`. The 10 GiB LUN
+  now shows as `sdb` on each node.
+- Static smoke test (`k8s/apps/storage/iscsi-test-*.yaml`): in-tree `iscsi` PV
+  (`targetPortal 192.168.30.200:3260`, lun 0, ext4) + PVC + busybox pod scheduled
+  on `k8s-node-2`. `AttachVolume` succeeded; `cat /data/test.txt` →
+  `hello-from-pod`. **Phase-1 exit criteria met** (pod reads/writes a block
+  volume that lives on tower); in-tree iSCSI plugin is present in v1.37.1.
+- Perf (through the router): 256 MiB write ≈ **624 MB/s cached**, ~**14 MB/s
+  durable**; 4 KiB fsync ≈ 0.8 ms. The durable rate is a bottleneck to revisit
+  (HDD fileio + routed iSCSI).
+- Live test objects were deleted afterwards; the manifests remain in the repo.
+
+Sources: Ansible run reports, `kubectl get/describe/exec`, `iscsiadm`, `lsblk`.
+No credentials recorded.
+
+---
+
+## 2026-10-13 — tower storage PoC (NFS + iSCSI), router forwarding
+
+Executed from `archasus` via Ansible (`ansible-playbook playbooks/site.yml`).
+
+- **Router (`192.168.1.1`)** — the k8s VLAN (zone `vlan120`) could not reach the
+  server segment (zone `srv`, `192.168.30.0/24`): both networks are directly
+  connected but the firewall `REJECT`ed inter-zone forwarding (workers got ICMP
+  `Destination Port Unreachable` from `10.10.120.1`). Added, via uci, an explicit
+  forwarding `vlan120 → srv` plus an allow rule for TCP `2049 3260 9000`.
+  Role `router_openwrt` (uses `raw` — OpenWrt has no Python). Idempotent.
+- **tower (`192.168.30.200`)** — storage appliance role `tower_storage`:
+  - **NFSv4**: `nfs-utils` installed; `/mnt/raid1/k8s-nfs` exported rw to
+    `10.10.120.0/24` and `192.168.30.0/24`; `nfs-server` enabled.
+  - **iSCSI (LIO)**: target `iqn.2026-10.lan.tower:k8s`, one 10 GiB `fileio`
+    LUN backed by `/mnt/raid1/k8s-iscsi/vol1.img`, portal `0.0.0.0:3260`,
+    dynamic ACLs. Configured **directly through configfs** — `targetcli` /
+    `python-rtslib` are AUR-only on Arch and `yay`/`pikaur` are broken
+    (`libalpm.so.13` / Python version mismatch). A boot unit `tower-iscsi.service`
+    replays the bring-up script at every boot.
+- **Verified** from `k8s-node-2`: `ping tower` OK, TCP `2049` and `3260` open
+  through the router (`9000` closed — MinIO deferred).
+- Roles `router_openwrt` and `tower_storage` are idempotent (second run: 0 changed).
+- Not done: MinIO (no secret source yet → `tower_minio_enabled=false`);
+  `open-iscsi` initiator on the nodes + a static PV/PVC smoke test.
+
+Sources: live SSH read-only inspection (router `uci show firewall/network`,
+`ip route`; tower kernel modules/configfs, `ss`, `exportfs`), then approved
+Ansible applies. No credentials recorded.
+
+---
+
+## 2026-10-13 — k8s cluster rebuilt (kubeadm v1.37.1 + Calico)
+
+- Ran `ansible-playbook playbooks/k8s.yml` (role `k8s_install`, three stages:
+  prereq → control plane → workers) against `k8s-node-1..4`.
+- Prereq: wiped old kubeadm state, upgraded `containerd.io` 1.6.24 → **2.4.1**,
+  enabled CRI + systemd cgroup, replaced the **expired** k8s apt repo key
+  (v1.28 → v1.37), installed and held `kubelet`/`kubeadm`/`kubectl` **v1.37.1**.
+- Control plane: `kubeadm init` (endpoint `10.10.120.101:6443`, pod CIDR
+  `10.244.0.0/16`, containerd cri-socket) + **Calico v3.33** (operator).
+- Workers joined. Result: **4/4 nodes `Ready`**; Calico and CoreDNS running.
+- `kubeconfig` copied to `archasus:~/.kube/config`; `kubectl` works from there.
+- Fixes en route: duplicate CRI sockets (containerd + cri-dockerd) needed
+  `--cri-socket`; a stale apiserver held `:6443` until leftover containers were
+  removed; Calico CRD-registration race (retry loop added).
+- The role is **not yet idempotent** — it resets the cluster on every run.
+
+---
+
+## 2026-10-13 — direction: Infrastructure as Code; k8s cluster discovered (down)
+
+- **Adopted IaC.** Provision with **OpenTofu** (`bpg/proxmox`), configure hosts
+  with **Ansible**, deliver workloads with **Flux** (GitOps), secrets with
+  **HashiCorp Vault + External Secrets Operator**. Recorded in
+  [`../adr/0001-infrastructure-as-code.md`](../adr/0001-infrastructure-as-code.md).
+  Added repo layout `tofu/`, `ansible/`, `k8s/`; updated `AGENTS.md` (repo is no
+  longer recon-only).
+- **Inspected the k8s cluster** from `archasus` via the proxmox guest-agent
+  (`qm guest exec`): `k8s-node-1..4` = Ubuntu 22.04.3, 2 vCPU / 4 GB / 22 GB,
+  VLAN 120, `10.10.120.101-104`, kubeadm **v1.28.3** + **Calico** + containerd.
+- **Cluster is DOWN** since ~2025-08: `kubelet` in a restart loop (3479 restarts)
+  because the bootstrap client cert in `/etc/kubernetes/kubelet.conf` expired
+  **2025-08-05**; `etcd`/`kube-apiserver` static pods not running; `:6443`
+  connection refused. No ingress controller, no Helm, no StorageClass. Left as-is;
+  to be rebuilt via kubeadm + Ansible.
+
+Sources: `qm config`, `qm guest exec`/`get-osinfo` on proxmox; in-guest
+`systemctl`, `journalctl -u kubelet`, `crictl ps -a`, `ls /etc/kubernetes`.
+
+---
+
+## 2026-10-13 — tower: Intel IMSM fakeraid → native mdadm RAID1
+
+Executed from `archasus` over SSH (`tower` as `arch`, `sudo -n`).
+
+- Old array: Intel IMSM (fakeraid) `1.3`, RAID1 `md126` over `sdb`+`sdc`
+  (Toshiba N300 HDWG440 4 TB, ext4). Data at **sector offset 0**; IMSM
+  metadata in the last ~1 MiB. Container `md127` (imsm).
+- Converted **in place, without data loss**:
+  stopped Docker `jellyfin` container + `transmission-daemon`/`minidlna`,
+  unmounted `/mnt/raid1`, `mdadm --stop md126 md127`,
+  `mdadm --zero-superblock` both disks, then recreated as
+  `md0 --level=1 --metadata=1.0 --bitmap=internal --assume-clean`.
+  **`v1.0` deliberately chosen** — its superblock lives at the *end* of the
+  device, matching the offset-0 data layout; `v1.2` (superblock 4 KiB from the
+  start) would have overwritten the ext4 superblock.
+- Verified: `e2fsck` **clean** (22962 files, 638M/976M blocks); ext4 superblock
+  byte-identical except the `s_wtime` timestamp; `mdadm --assemble --scan`
+  re-assembles `md0`; `mount -a` mounts by UUID; all top-level dirs present.
+- `/etc/mdadm.conf` rewritten: IMSM/container entries removed →
+  `ARRAY /dev/md0 metadata=1.0 UUID=f09bfb3e:b5e8c4d7:0853fea4:3146658e`.
+- `/etc/fstab`: `/dev/md/data` → `UUID=4d4ef0b1-fd11-4f60-9ab5-d9951dca4e26`.
+- initramfs regenerated (`mkinitcpio -P`; the `mdadm_udev` hook embeds
+  `/etc/mdadm.conf`).
+- Rollback material (metadata regions of both disks + old configs):
+  `/home/arch/raid-migrate-20261013-075052/`.
+- Array healthy: SMART PASSED both disks, 0 reallocated/pending, ~2.4 TB used.
+  Data intentionally kept (user may wipe later).
+- `transmission-daemon` and `minidlna` **stopped and disabled** (`systemctl
+  disable --now`) — no longer auto-start. `jellyfin` container left stopped.
+
+Sources: live SSH inspection (`mdstat`, `mdadm --examine/--detail/--create`,
+`smartctl`, `e2fsck`, `blkid`), plus a loop-device sandbox test of the
+`v1.0 + internal bitmap` layout before touching the real disks.
+
+---
+
+## 2026-10-12 — audit cleanup & upgrades (tower + proxmox)
+
+Executed from `archasus` over SSH (`tower` as `arch`; `proxmox` as `root`, then
+`arch`). Read-only audit first, then approved changes.
+
+**tower (`192.168.30.200`)**
+- Full system upgrade (Arch was last updated 2026-03-11): kernel `6.19.6` →
+  **`7.2.9-arch1-1`** (rebooted), 0 pending updates.
+- **MinIO removed** — container, image, compose dir `/home/arch/docker/minio`,
+  data `/mnt/raid1/minio`. Ports 9000/9001 closed.
+- **NFS removed** — nfs-server/rpcbind stopped+disabled, `/etc/exports` cleared,
+  bind mount (`/mnt/raid1/datasets → /srv/nfs/datasets`) removed from
+  `/etc/fstab`; `nfs-utils` and `rpcbind` uninstalled.
+- **SMB removed** — smb/nmb stopped+disabled, `samba` uninstalled; config backed
+  up to `/etc/samba/smb.conf.bak-<ts>`.
+- **`/mnt/raid1/datasets` deleted** (15 GB: `commoncrawl` 6.1 GB +
+  `webdataset` 8.5 GB), as requested.
+- **Transmission fixed** — the upgrade renamed the packaged unit
+  `transmission.service` → `transmission-daemon.service` (old symlink dangled,
+  daemon didn't start). Added drop-in `transmission-daemon.service.d/override.conf`
+  (`User=arch`, `HOME=/home/arch`, `TRANSMISSION_WEB_HOME=/var/lib/flood-for-transmission`)
+  and enabled the new unit.
+- Stale failed `netctl@*` units disabled/cleared (0 failed units now).
+- Config backups kept: `/etc/exports.bak-<ts>`, `/etc/fstab.bak-<ts>`,
+  `/etc/samba/smb.conf.bak-<ts>`.
+- ⚠️ `.pacnew` files await review (`ssh/sshd_config`, `sudoers`, `mkinitcpio.conf`,
+  `pacman.conf`, `mdadm.conf`, `passwd`, `hosts`, `locale.gen`, …).
+- ⚠️ Temporary `/etc/sudoers.d/arch-nopasswd` added to run this work (easy to remove).
+
+**proxmox (`192.168.30.201`)**
+- Destroyed VMs **110 `xminer`**, **203 `win10`**, **9000 `ubuntu-cloud`**; only
+  `k8s-node-1..4` remain (all `onboot`, running).
+- Added `pve-no-subscription` repo; **PVE 8.0.3 → 8.4.21**; default kernel
+  installed; rebooted into **`6.8.12-43-pve`** (was `6.2.16-3-pve`).
+- Configured user **`arch`** — added `archasus` SSH key + `NOPASSWD` sudo
+  (`/etc/sudoers.d/arch`).
+- Not addressed (from audit): PVE node SSL cert still expired (2025-08-17) →
+  daily `pveupdate: SSL certificate failed`; no `vzdump` backups; NVMe
+  media/data-integrity errors (20); SSH `PermitRootLogin yes` +
+  `PasswordAuthentication yes`; PVE firewall has no rules.
+
+Sources: live SSH inspection of both hosts (root/privileged), `pacman`, `apt`,
+`systemctl`, `qm`, `smartctl`. No credentials are recorded here.
+
+---
+
 ## 2026-10-12 — initial reconnaissance
 
 Observed from `archasus` (`192.168.1.204`).

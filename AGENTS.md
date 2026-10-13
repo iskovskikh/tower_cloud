@@ -1,38 +1,50 @@
 # AGENTS.md
 
-Guidance for AI agents working in this repository (`tower_cloud` — development of
-the home/local network infrastructure).
+Guidance for AI agents working in this repository (`tower_cloud` — the home/local
+network and Kubernetes infrastructure, managed as **Infrastructure as Code**).
 
 ## Read this first
-
-Before doing anything network-related, load the current picture:
 
 1. [`docs/network/README.md`](docs/network/README.md) — topology, subnets, access.
 2. [`docs/network/inventory.yaml`](docs/network/inventory.yaml) — **source of truth**
    (hosts, IPs, services, status). Trust this over assumptions.
 3. [`docs/network/CHANGELOG.md`](docs/network/CHANGELOG.md) — history & anomalies.
+4. [`docs/adr/`](docs/adr/) — architecture decisions (the "why").
+5. [`docs/storage/plan.md`](docs/storage/plan.md) — tower storage plan.
 
 ## The environment in one paragraph
 
-There is one OpenWrt router (`192.168.1.1`) that bridges the LAN subnet
-`192.168.1.0/24` and **routes** a separate server subnet `192.168.30.0/24`.
-The two servers are `tower` (`192.168.30.200`: NAS/media/object-storage:
-Jellyfin, MinIO, SMB/NFS, Transmission) and `proxmox` (`192.168.30.201`:
-Proxmox VE hypervisor). The workstation `archasus` (`192.168.1.204`) is the
-docker host running these agents. A second router (**Keenetic Omni 2**) exists
-but is offline.
+One OpenWrt router (`192.168.1.1`) bridges the LAN `192.168.1.0/24` and **routes**
+a server subnet `192.168.30.0/24`. Servers: `tower` (`192.168.30.200` — storage
+appliance; data array `/mnt/raid1` = native mdadm RAID1 `md0`; will serve
+NFS/iSCSI/S3 to the cluster) and `proxmox` (`192.168.30.201` — Proxmox VE,
+hosts the k8s VMs). The Kubernetes cluster `k8s-node-1..4`
+(`10.10.120.101-104`, VLAN 120, Ubuntu 22.04) is being **rebuilt** from scratch
+(kubeadm, currently down). `archasus` (`192.168.1.204`) is the docker host running
+these agents. The **Keenetic Omni 2** router is an offline spare.
+
+## Repository layout
+
+| Path | Purpose |
+|---|---|
+| `docs/` | topology, inventory, changelog, ADRs |
+| `tofu/` | provisioning — OpenTofu (proxmox VMs) |
+| `ansible/` | host config — tower storage, router, k8s install |
+| `k8s/` | GitOps (Flux) — storage, secrets (Vault+ESO), apps |
+| `scripts/` | helper scripts (`recon.sh`, …) |
 
 ## Rules
 
-- **Verify reality before changing it.** Run `scripts/recon.sh` to refresh facts.
-- **Read-only by default.** This repo currently does reconnaissance only. Do not
-  change router/server configuration without explicit user approval.
-- **Keep `inventory.yaml` in sync** whenever the network changes, and add an
-  entry to `docs/network/CHANGELOG.md`. Record the date and how it was observed.
-- **Never commit secrets** (passwords, keys, tokens, client configs). Reference
-  credentials by name and keep the real values in a password manager.
-- **Mark uncertainty.** Use ❓ / "unconfirmed" rather than guessing. Open questions
-  live under `open_questions:` in `inventory.yaml`.
+- **IaC is the source of truth.** Change infrastructure by editing code here and
+  applying it (`tofu` / `ansible-playbook` / `flux`), not by hand on hosts.
+  Hand-fixes are stopgaps — reflect them back into code.
+- **Verify reality before changing it.** Run `scripts/recon.sh`; trust
+  `inventory.yaml` over assumptions.
+- **Get explicit approval before applying** changes to hosts or the cluster
+  (`tofu apply`, `ansible-playbook`, `flux`, `kubectl`) — this is home prod.
+- **Keep `inventory.yaml` and `docs/network/CHANGELOG.md` in sync** with reality.
+- **Never commit secrets.** Values live in Vault; commit references/paths only.
+- **Mark uncertainty.** Use ❓ / "unconfirmed" rather than guessing.
 - Prefer stable identifiers (`id: tower`) and CIDRs over ad-hoc IP strings.
 
 ## Handy commands
@@ -43,6 +55,10 @@ scripts/recon.sh --host 192.168.30.200        # scan one host
 ssh root@192.168.1.1                          # router (OpenWrt)
 ssh tower                                     # tower.lan → 192.168.30.200
 ssh arch@192.168.30.201                       # proxmox
+
+tofu -chdir=tofu/proxmox plan                 # provisioning (needs API token)
+ansible-playbook ansible/playbooks/site.yml   # configure hosts
+flux reconcile kustomization flux-system      # GitOps (once bootstrapped)
 ```
 
 Tooling note: `nmap`/`arp-scan` are **not installed** on `archasus`; `recon.sh`
