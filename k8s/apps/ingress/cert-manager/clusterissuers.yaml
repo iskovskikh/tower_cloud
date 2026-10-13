@@ -1,0 +1,38 @@
+# Internal CA for home names (no public Let's Encrypt; services are not
+# internet-reachable). Import the `tower-ca` CA bundle into clients to trust it.
+---
+# 1. Bootstrap: self-signed issuer
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+# 2. The CA certificate (key material lives in Secret tower-ca)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tower-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: tower-cloud-ca
+  secretName: tower-ca
+  duration: 87600h      # 10 years
+  renewBefore: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned
+    kind: ClusterIssuer
+---
+# 3. CA-backed issuer used by Ingresses
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: tower-ca
+spec:
+  ca:
+    secretName: tower-ca
