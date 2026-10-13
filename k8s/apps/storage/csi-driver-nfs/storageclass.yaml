@@ -1,0 +1,13 @@
+# Dynamic RWX volumes backed by tower's NFS export /mnt/raid1/k8s-nfs.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: tower-nfs
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: 192.168.30.200
+  share: /mnt/raid1/k8s-nfs
+  mountPermissions: "0777"
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

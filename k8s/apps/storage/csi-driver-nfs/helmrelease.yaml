@@ -1,0 +1,26 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: csi-driver-nfs
+  namespace: kube-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: csi-driver-nfs
+      version: "4.13.5"
+      sourceRef:
+        kind: HelmRepository
+        name: csi-driver-nfs
+        namespace: kube-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # We manage our own StorageClass (tower-nfs) below.
+    storageClass:
+      create: false

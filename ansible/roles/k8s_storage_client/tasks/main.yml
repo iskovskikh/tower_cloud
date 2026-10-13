@@ -1,0 +1,30 @@
+---
+# Storage client tooling on the k8s nodes: iSCSI initiator (tower block LUNs)
+# and the NFS client (csi-driver-nfs mounts tower's NFS export on the nodes).
+#
+# We deliberately do NOT log in to the iSCSI target here: the kubelet in-tree
+# iscsi plugin performs discovery + login on attach and logout on detach, so only
+# the node actually using a volume holds a session. Pre-logging every node leaves
+# stale (pre-format) device views elsewhere, and a later reschedule makes their
+# kubelet reformat the LUN — destroying data.
+
+- name: client | install storage client packages
+  ansible.builtin.apt:
+    name:
+      - open-iscsi
+      - nfs-common
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: client | ensure iscsid is enabled and running
+  ansible.builtin.service:
+    name: iscsid
+    state: started
+    enabled: true
+
+- name: client | discover targets on tower (populate node records, no login)
+  ansible.builtin.command:
+    cmd: iscsiadm -m discovery -t sendtargets -p {{ tower_iscsi_portal }}
+  register: tower_iscsi_disc
+  changed_when: false
