@@ -4,6 +4,25 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Flux GitOps bootstrapped
+
+Executed from `archasus`.
+
+- Added git remote **`origin = git@github.com:iskovskikh/tower_cloud.git`** (SSH)
+  and pushed the IaC repo (empty GitHub repo → 5 commits).
+- **Flux v2.9.6** bootstrapped with `flux bootstrap git --branch=master
+  --path=k8s --private-key-file=~/.ssh/id_ed25519`. Components installed in
+  `flux-system` and healthy (source/kustomize/helm/notification controllers);
+  `GitRepository` + root `Kustomization` reconciled to `master@sha1:5d22c320`.
+- The root Kustomization reconciles the whole `k8s/` tree, so the static iSCSI
+  smoke test (PV/PVC/Pod) is now **GitOps-managed** (previously applied by hand).
+- Flux committed `k8s/flux-system/{gotk-components,gotk-sync,kustomization}.yaml`.
+
+Sources: `flux bootstrap`, `flux get`, `kubectl -n flux-system`, `git`.
+The in-cluster source secret holds an SSH key — **not** recorded here.
+
+---
+
 ## 2026-10-13 — tower block storage validated from a pod (Phase 1)
 
 Executed from `archasus` (Ansible + `kubectl`).

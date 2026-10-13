@@ -17,7 +17,7 @@ _Updated: 2026-10-13_
       flux 2.9.6; ansible-core 2.21.5 in a venv)
 - [x] SSH access `archasus → k8s nodes` (pubkey injected via `qm guest exec`;
       user `arch`, passwordless sudo)
-- [ ] local git remote (repo is local-only today)
+- [x] git remote `origin` (GitHub — see Phase 3)
 
 ## Phase 1 — tower storage (СХД)
 
@@ -48,7 +48,10 @@ _Updated: 2026-10-13_
 
 ## Phase 3 — GitOps + secrets
 
-- [ ] Flux bootstrap (points at `k8s/`)
+- [x] Flux **v2.9.6** bootstrapped (`flux bootstrap git`, SSH, path `k8s/`,
+      branch `master`); `flux-system` healthy, GitRepository + Kustomization
+      reconciled. Repo now has remote `origin` (GitHub).
+- [x] Git remote `origin = git@github.com:iskovskikh/tower_cloud.git` (Phase 0 item)
 - [?] Vault storage backend (Raft vs S3-on-MinIO) + auto-unseal
 - [ ] Vault + External Secrets Operator installed via Flux
 - [ ] first `ExternalSecret` verified
@@ -68,6 +71,11 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Flux GitOps live.** Pushed the repo to
+  `github.com:iskovskikh/tower_cloud` (SSH) and bootstrapped Flux v2.9.6
+  (`flux bootstrap git --branch=master --path=k8s`, SSH deploy secret).
+  `flux-system` healthy; the root Kustomization reconciles `k8s/` — the static
+  iSCSI smoke test is now GitOps-managed. Next: Vault+ESO (backend/auto-unseal TBD).
 - 2026-10-13 — **Phase 1 validated end to end.** `open-iscsi` initiator on all 4
   nodes (role `k8s_iscsi_initiator`, separate playbook `k8s-storage.yml` — not in
   `site.yml`, which still pulls the non-idempotent `k8s_install`). Static iSCSI
