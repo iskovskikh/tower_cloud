@@ -110,6 +110,12 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Fixed control-plane OOM (VM memory over-commit).** proxmox has
+  16 GB but the 4 VMs were `4096/balloon=1024` ⇒ Proxmox ballooned guests to
+  ~1.2 GB and oom-killed kube-apiserver/controller-manager/scheduler (API
+  `TLS handshake timeout`). Applied variant B on proxmox: `101 -balloon 4096`,
+  `102-104 -memory 3072 -balloon 3072` + VM reboots. Now node-1 4 GB fixed,
+  workers 3 GB, host keeps ~2.5 GB; apiserver stable, 0 OOM. Inventory updated.
 - 2026-10-13 — **TLS live (cert-manager).** Deployed **cert-manager v1.21.2** via
   Flux; internal CA chain (`selfsigned` → `Certificate tower-ca` → ClusterIssuer
   `tower-ca`). Vault UI now served at **`https://vault.local`** (Ingress +

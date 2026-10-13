@@ -175,15 +175,20 @@ kubernetes:
   # provisioned by OpenTofu, configured by Ansible — see docs/adr/0001
   nodes:
     - {id: k8s-node-1, ip: 10.10.120.101, role: control-plane, vmid: 101, vcpu: 2, mem_mb: 4096, disk_gb: 22}
-    - {id: k8s-node-2, ip: 10.10.120.102, role: worker, vmid: 102, vcpu: 2, mem_mb: 4096, disk_gb: 22}
-    - {id: k8s-node-3, ip: 10.10.120.103, role: worker, vmid: 103, vcpu: 2, mem_mb: 4096, disk_gb: 22}
-    - {id: k8s-node-4, ip: 10.10.120.104, role: worker, vmid: 104, vcpu: 2, mem_mb: 4096, disk_gb: 22}
+    - {id: k8s-node-2, ip: 10.10.120.102, role: worker, vmid: 102, vcpu: 2, mem_mb: 3072, disk_gb: 22}
+    - {id: k8s-node-3, ip: 10.10.120.103, role: worker, vmid: 103, vcpu: 2, mem_mb: 3072, disk_gb: 22}
+    - {id: k8s-node-4, ip: 10.10.120.104, role: worker, vmid: 104, vcpu: 2, mem_mb: 3072, disk_gb: 22}
   notes: >
     Four Ubuntu 22.04 VMs on proxmox, VLAN 120, DHCP, qemu-guest-agent.
     Originally built Oct 2023 (kubeadm v1.28.3) and dead since ~2025-08 (expired
     kubelet certs). **Rebuilt 2026-10-13 via IaC** (Ansible role `k8s_install`):
     containerd 2.4.1, kubeadm v1.37.1, Calico v3.33 operator; 4/4 nodes Ready.
-    kubeconfig on archasus. No ingress controller / StorageClass yet.
+    kubeconfig on archasus. StorageClasses `tower-nfs`/`tower-iscsi-static`;
+    ingress-nginx; cert-manager; Garage S3.
+    **Memory (2026-10-13):** proxmox has only 16 GB, so 4×4 GB over-commits.
+    Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
+    balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and
+    the control-plane hit OOM (see CHANGELOG).
 
 open_questions:
   - "Confirm the two 'servers' are tower (192.168.30.200) and proxmox (192.168.30.201)."

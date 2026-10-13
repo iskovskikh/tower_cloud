@@ -4,6 +4,28 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — control-plane OOM: VM memory over-commit on proxmox
+
+- **Symptom:** `kubectl` started failing with `TLS handshake timeout` / connection
+  refused.
+- **Cause:** the 4 k8s VMs were configured `memory=4096, balloon=1024` on a
+  proxmox host with only **16 GB** (4×4 = 16 GB + host ⇒ over-committed). Proxmox
+  ballooned the guests down to ~1.2 GB each; the control-plane VM could not fit
+  etcd + kube-apiserver (~500 MB) + controller-manager + Calico, so the **kernel
+  oom-killer repeatedly killed kube-apiserver / kube-controller-manager /
+  kube-scheduler / calico-kube-controllers** (no swap in the guests).
+- **Fix (variant B):** give the control-plane its full memory and trim the
+  workers — on proxmox: `qm set 101 -balloon 4096`, `qm set {102,103,104}
+  -memory 3072 -balloon 3072`, then reboot the VMs (Proxmox does not re-evaluate
+  the balloon target live). Result: node-1 **3939 MB**, workers **~3000 MB**;
+  host keeps ~2.5 GB free (16 GB total). apiserver stable, **0 OOM** since.
+- Reality vs inventory: the nodes are not all 4 GB — node-1 4 GB (fixed),
+  workers 3 GB. `docs/network/inventory.yaml` updated.
+
+Sources: `kubectl`, `free`, `dmesg`, `qm config`/`qm monitor`/`qm set` on proxmox.
+
+---
+
 ## 2026-10-13 — TLS: cert-manager + internal CA
 
 Executed from `archasus` (Flux).
