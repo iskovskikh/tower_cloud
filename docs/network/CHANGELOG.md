@@ -4,6 +4,26 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — ingress-nginx (hostNetwork DaemonSet) via Flux
+
+Executed from `archasus` (Flux).
+
+- Deployed **ingress-nginx v1.15.1** (chart 4.15.1) via Flux (HelmRepository
+  `kubernetes.github.io/ingress-nginx` + HelmRelease in `ingress-nginx`).
+- Runs as a **hostNetwork DaemonSet** (no cloud LoadBalancer/MetalLB), so every
+  node listens on `:80` (and `:443`); any node IP is an entry point. Class
+  `nginx` is set as the default IngressClass.
+- Controller runs on the 3 workers (`k8s-node-2/3/4`); the control-plane is
+  tainted `NoSchedule` so it is intentionally skipped.
+- Verified: a temporary whoami Deployment/Service/Ingress answered from
+  `archasus` at `http://10.10.120.102/` with `Host: whoami.local`
+  (`X-Forwarded-For: 10.10.120.1` — via the router). Test objects removed.
+- Not yet: TLS / cert-manager, DNS names.
+
+Sources: `kubectl`, `flux`. No credentials involved.
+
+---
+
 ## 2026-10-13 — Dynamic RWX storage (csi-driver-nfs) + firewall fix
 
 Executed from `archasus` (Flux).

@@ -79,7 +79,11 @@ _Updated: 2026-10-13_
       Pinned `vers=4.1` (4.2 OOMs the 4 GB nodes). Role `k8s_storage_client` also
       installs `nfs-common` on the nodes.
 - [ ] StorageClasses `tower-iscsi` (RWO block, needs a CSI driver) / `tower-s3`
-- [ ] ingress controller
+- [x] ingress controller — **ingress-nginx v1.15.1** via Flux, run as a
+      hostNetwork DaemonSet (no cloud LB): any node IP `:80` (`:443` free) is an
+      entry point, reachable from the LAN through the router. Class `nginx`
+      is the default. Validated with a whoami Ingress from `archasus`.
+- [ ] TLS / cert-manager, DNS names
 - [ ] media stack (Jellyfin, Transmission) consumed from tower
 - [ ] databases (Postgres) on RWO block
 
@@ -91,6 +95,11 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Ingress live.** Deployed **ingress-nginx v1.15.1** via Flux
+  (Helm) as a `hostNetwork` DaemonSet (no MetalLB/cloud LB) — every node's `:80`
+  (`:443`) is an entry point; the class `nginx` is default. Verified end to end:
+  a whoami Ingress answered from `archasus` over the LAN→VLAN120 route. No TLS
+  yet (cert-manager later).
 - 2026-10-13 — **Dynamic RWX storage live (Phase 4 start).** Deployed
   **csi-driver-nfs v4.13.5** via Flux (Helm) + StorageClass **`tower-nfs`**
   (provisioner `nfs.csi.k8s.io`, server tower, share `/mnt/raid1/k8s-nfs`).
