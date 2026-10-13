@@ -34,5 +34,11 @@ spec:
       reportNodeInternalIp: true
       ingressClassResource:
         default: true
+      # Also run on the control-plane node: every node becomes an ingress entry
+      # point, so the wildcard DNS *.k8s.lan can resolve to all four node IPs.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
     defaultBackend:
       enabled: false

@@ -2,3 +2,7 @@
 - name: reload firewall
   ansible.builtin.raw: /etc/init.d/firewall reload
   changed_when: false
+
+- name: reload dnsmasq
+  ansible.builtin.raw: /etc/init.d/dnsmasq reload
+  changed_when: false

@@ -27,3 +27,16 @@ router_openwrt_rules:
     proto: tcp
     ports: "2049 3260 9000"
     target: ACCEPT
+
+# --- DNS (dnsmasq) ----------------------------------------------------------
+# Wildcard records for cluster services. Each entry becomes a dnsmasq
+# `--address=<domain>/<ip>` line: dnsmasq answers for the domain and all its
+# subdomains and never forwards them (so any new Ingress host under the domain
+# resolves without touching DNS). ingress-nginx runs as a hostNetwork DaemonSet
+# on every node, so one entry per node IP is returned (round-robin / failover).
+# Service Ingresses use <name>.k8s.lan.
+router_openwrt_dns_addresses:
+  - "/k8s.lan/10.10.120.101"
+  - "/k8s.lan/10.10.120.102"
+  - "/k8s.lan/10.10.120.103"
+  - "/k8s.lan/10.10.120.104"

@@ -50,3 +50,28 @@
   register: router_fw
   changed_when: "'CHANGED' in router_fw.stdout"
   notify: reload firewall
+
+- name: Apply cluster DNS wildcard (dnsmasq)
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+
+    want="{% for a in router_openwrt_dns_addresses %}{{ a }} {% endfor %}"
+    have="$(uci -q get dhcp.@dnsmasq[0].address 2>/dev/null || true)"
+
+    want_norm="$(printf '%s\n' $want | grep . | sort | tr '\n' ' ' || true)"
+    have_norm="$(printf '%s\n' $have | grep . | sort | tr '\n' ' ' || true)"
+
+    if [ "$want_norm" != "$have_norm" ]; then
+      uci -q delete dhcp.@dnsmasq[0].address 2>/dev/null || true
+      {% for a in router_openwrt_dns_addresses %}
+      uci -q add_list dhcp.@dnsmasq[0].address='{{ a }}'
+      {% endfor %}
+      uci commit dhcp
+      changed=1
+    fi
+
+    if [ "$changed" = 1 ]; then echo CHANGED; else echo OK; fi
+  register: router_dns
+  changed_when: "'CHANGED' in router_dns.stdout"
+  notify: reload dnsmasq

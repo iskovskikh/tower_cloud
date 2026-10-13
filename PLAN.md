@@ -49,7 +49,9 @@ _Updated: 2026-10-13_
       `-e k8s_reset=true` (`kubeadm init`/join were already guarded by their
       output files)
 - [?] import VMs 101–104 into OpenTofu state, or recreate from a template
-- [?] static IPs for k8s nodes (currently DHCP)
+- [~] static IPs for k8s nodes — effectively static via router **DHCP
+      reservations** (`dhcp.@host[4..7]`, MAC → 10.10.120.101-104); not yet
+      codified in IaC (reservations were added by hand)
 
 ## Phase 3 — GitOps + secrets
 
@@ -98,7 +100,10 @@ _Updated: 2026-10-13_
       (`tower-ca`, self-signed bootstrap). Works for LAN-only names (no public
       ACME). Vault UI exposed at `https://vault.local` (`vault-tls`). Import the
       `tower-ca` cert to trust it.
-- [ ] DNS names (router dnsmasq or /etc/hosts), more Ingresses
+- [x] **DNS** — wildcard `*.k8s.lan` on the router (dnsmasq `--address`, role
+      `router_openwrt`) → all 4 node IPs; ingress-nginx runs on every node
+      (control-plane toleration). New Ingresses just use `<name>.k8s.lan`.
+      Vault moved to `vault.k8s.lan`; `/etc/hosts` hand-fix removed.
 - [ ] media stack (Jellyfin, Transmission) consumed from tower
 - [ ] databases (Postgres) on RWO block
 
@@ -110,6 +115,14 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **DNS live (`*.k8s.lan`).** Router dnsmasq now serves a wildcard
+  for cluster services: role `router_openwrt` writes
+  `dhcp.@dnsmasq[0].address='/k8s.lan/<ip>'` for all four nodes (idempotent,
+  `--address` matches subdomains). Added a control-plane toleration so
+  ingress-nginx (hostNetwork DaemonSet) also runs on `k8s-node-1` — all four node
+  IPs are entry points. Vault Ingress moved `vault.local` → **`vault.k8s.lan`**
+  (cert re-issued); the manual `/etc/hosts` entry on `archasus` removed. Node IPs
+  stay stable via router DHCP reservations (`dhcp.@host[4..7]`, not yet IaC).
 - 2026-10-13 — **Fixed control-plane OOM (VM memory over-commit).** proxmox has
   16 GB but the 4 VMs were `4096/balloon=1024` ⇒ Proxmox ballooned guests to
   ~1.2 GB and oom-killed kube-apiserver/controller-manager/scheduler (API

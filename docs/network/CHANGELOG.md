@@ -4,6 +4,32 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — DNS: wildcard `*.k8s.lan` + ingress on all nodes
+
+Executed from `archasus` (Ansible + Flux).
+
+- **Router DNS (codified).** New task in role `router_openwrt` writes a dnsmasq
+  wildcard via uci — `dhcp.@dnsmasq[0].address='/k8s.lan/<node-ip>'` for all four
+  nodes (dnsmasq `--address=/k8s.lan/IP`: matches the domain and every subdomain,
+  never forwards it). Idempotent; reloads dnsmasq only on change. Any Ingress host
+  `<name>.k8s.lan` now resolves from the whole LAN without per-service DNS edits;
+  dnsmasq returns all four A records → simple round-robin/failover.
+- **ingress-nginx on every node.** Added a `control-plane` `NoSchedule` toleration
+  to the HelmRelease so the hostNetwork controller also runs on `k8s-node-1`
+  (`:443` there was closed before). All four node IPs are now entry points.
+- **Vault Ingress renamed** `vault.local` → **`vault.k8s.lan`** (cert-manager
+  re-issued `vault-tls` from `tower-ca`). Removed the manual
+  `10.10.120.102 vault.local` line from `/etc/hosts` on `archasus` — the hand-fix
+  is now folded into IaC.
+- Node IPs are stable via **pre-existing DHCP reservations** on the router
+  (`dhcp.@host[4..7]`, MAC → 10.10.120.101-104); not yet codified in IaC.
+- Verified from `archasus`: `nslookup vault.k8s.lan 192.168.1.1` → all four node
+  IPs; `getent hosts`; `curl --cacert tower-ca https://vault.k8s.lan`.
+
+Sources: `uci`/`nslookup`/`getent`, `kubectl`, `flux`.
+
+---
+
 ## 2026-10-13 — control-plane OOM: VM memory over-commit on proxmox
 
 - **Symptom:** `kubectl` started failing with `TLS handshake timeout` / connection

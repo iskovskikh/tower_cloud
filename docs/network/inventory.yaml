@@ -46,6 +46,11 @@ hosts:
       vlan120 (10.10.120.0/24), iot (192.168.20.0/24), srv (192.168.30.0/24).
       Firewall forwards vlan120 -> srv on 2049/3260/9000 (added 2026-10-13, role
       router_openwrt) so the k8s nodes can reach tower's storage.
+      DNS (dnsmasq) serves a wildcard for cluster Ingress names: --address
+      '/k8s.lan/<ip>' for all four node IPs (role router_openwrt, 2026-10-13) —
+      any <name>.k8s.lan resolves to the ingress entry points. It also has
+      static DHCP reservations for the k8s nodes (dhcp.@host[4..7]:
+      10.10.120.101-104) so those IPs are stable.
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
       - {port: 80, proto: tcp, service: luci-http}
@@ -184,7 +189,10 @@ kubernetes:
     kubelet certs). **Rebuilt 2026-10-13 via IaC** (Ansible role `k8s_install`):
     containerd 2.4.1, kubeadm v1.37.1, Calico v3.33 operator; 4/4 nodes Ready.
     kubeconfig on archasus. StorageClasses `tower-nfs`/`tower-iscsi-static`;
-    ingress-nginx; cert-manager; Garage S3.
+    ingress-nginx (hostNetwork DaemonSet on **all** nodes, incl. control-plane
+    via toleration); cert-manager; Garage S3. DNS wildcard `*.k8s.lan` ->
+    10.10.120.101-104 served by the router; e.g. Vault UI at
+    `https://vault.k8s.lan`.
     **Memory (2026-10-13):** proxmox has only 16 GB, so 4×4 GB over-commits.
     Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
     balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and
