@@ -110,7 +110,7 @@
 # after Keycloak is running and the realm has been imported.
 - name: vault_config | read the internal CA (for OIDC discovery TLS)
   ansible.builtin.command:
-    cmd: kubectl -n cert-manager get secret tower-ca -o jsonpath={.data.ca\.crt}
+    cmd: kubectl -n cert-manager get secret tower-ca -o 'jsonpath={.data.ca\.crt}'
   register: vault_tower_ca_b64
   changed_when: false
   when: vault_oidc_enable | bool
@@ -137,7 +137,7 @@
         user_claim=preferred_username \
         oidc_scopes=openid,profile,email \
         policies={{ vault_oidc_default_policy }} \
-        allowed_redirect_uris={% for u in vault_oidc_allowed_redirect_uris %}"{{ u }}" {% endfor %} >/dev/null
+        {% for u in vault_oidc_allowed_redirect_uris %}allowed_redirect_uris="{{ u }}" {% endfor %}>/dev/null
       if [ "$changed" = 1 ]; then echo CHANGED; else echo OK; fi
       EOS
   environment:
