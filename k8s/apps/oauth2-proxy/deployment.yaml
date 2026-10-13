@@ -38,6 +38,9 @@ spec:
             # Share the session cookie across all protected *.k8s.lan hosts.
             - --cookie-domain=.k8s.lan
             - --whitelist-domain=.k8s.lan
+            # Transmission's RPC API is reached by non-browser clients; let it
+            # through to the app, which enforces its own basic auth (USER/PASS).
+            - --skip-auth-route=^/transmission/rpc
           env:
             - name: OAUTH2_PROXY_CLIENT_ID
               value: oauth2-proxy

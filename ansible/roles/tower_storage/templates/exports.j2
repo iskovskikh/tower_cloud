@@ -1,3 +1,8 @@
 {% for client in tower_nfs_clients %}
 {{ tower_nfs_export_dir }} {{ client }}({{ tower_nfs_options }})
 {% endfor %}
+{% if tower_nfs_media_enabled | bool %}
+{% for client in tower_nfs_media_clients %}
+{{ tower_nfs_media_export_dir }} {{ client }}({{ tower_nfs_media_options }})
+{% endfor %}
+{% endif %}

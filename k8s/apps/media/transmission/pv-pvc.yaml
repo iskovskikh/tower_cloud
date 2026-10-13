@@ -1,0 +1,51 @@
+# Transmission config/state (settings.json, resume, torrents, blocklists).
+# Small and dynamic -> a normal dynamic PVC on tower's RWX NFS export.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: transmission-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: tower-nfs
+  resources:
+    requests:
+      storage: 2Gi
+---
+# Media library: the *existing* tower export /mnt/raid1/share/downloads, shared
+# with Jellyfin on tower (same files, so moves/renames stay consistent). Pre-
+# provisioned via the NFS CSI driver — the share is never created here.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tower-nfs-media
+spec:
+  capacity:
+    storage: 4Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: tower-nfs
+  mountOptions:
+    - vers=4.1
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: 192.168.30.200#/mnt/raid1/share/downloads
+    volumeAttributes:
+      server: 192.168.30.200
+      share: /mnt/raid1/share/downloads
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: transmission-downloads
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: tower-nfs
+  volumeName: tower-nfs-media
+  resources:
+    requests:
+      storage: 4Ti

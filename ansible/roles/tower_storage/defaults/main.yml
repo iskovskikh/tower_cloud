@@ -11,6 +11,14 @@ tower_nfs_clients:
   - 192.168.30.0/24    # server segment
 tower_nfs_options: "rw,sync,no_subtree_check,no_root_squash,insecure"
 
+# Media library shared with the cluster: Transmission (in k8s) writes here and
+# Jellyfin (on tower) reads the same files. This is *existing* data — the
+# directory is only exported, never created/owned by Ansible.
+tower_nfs_media_enabled: true
+tower_nfs_media_export_dir: /mnt/raid1/share/downloads
+tower_nfs_media_clients: "{{ tower_nfs_clients }}"
+tower_nfs_media_options: "rw,sync,no_subtree_check,no_root_squash,insecure"
+
 # --- iSCSI: block volumes for databases (RWO) -----------------------------
 # Implemented directly through configfs (no targetcli): Arch keeps targetcli /
 # python-rtslib in the AUR only, and the local AUR helpers are broken.

@@ -14,6 +14,12 @@
     group: root
     mode: "0775"
 
+- name: nfs | create media export directory
+  ansible.builtin.file:
+    path: "{{ tower_nfs_media_export_dir }}"
+    state: directory
+  when: tower_nfs_media_enabled | bool
+
 - name: nfs | write /etc/exports
   ansible.builtin.template:
     src: exports.j2

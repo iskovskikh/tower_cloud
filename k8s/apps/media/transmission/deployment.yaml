@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transmission
+  namespace: media
+  labels:
+    app: transmission
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: transmission
+  template:
+    metadata:
+      labels:
+        app: transmission
+    spec:
+      # Seed /config/settings.json on first start (the linuxserver init would
+      # otherwise copy its own default, which writes into /downloads/complete).
+      initContainers:
+        - name: seed-config
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - test -f /config/settings.json || cp /defaults/settings.json /config/settings.json
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: defaults
+              mountPath: /defaults
+      containers:
+        - name: transmission
+          image: ghcr.io/linuxserver/transmission:4.1.3
+          env:
+            # uid 1000 = arch on tower; gid 1006 = sambashare, the group owning
+            # the existing library, so new writes stay group-accessible.
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1006"
+            - name: TZ
+              value: "Europe/Moscow"
+            - name: UMASK
+              value: "002"
+            - name: PEERPORT
+              value: "51413"
+            - name: USER
+              valueFrom:
+                secretKeyRef:
+                  name: transmission-secrets
+                  key: rpc-username
+            - name: PASS
+              valueFrom:
+                secretKeyRef:
+                  name: transmission-secrets
+                  key: rpc-password
+          ports:
+            - name: rpc
+              containerPort: 9091
+            - name: peer-tcp
+              containerPort: 51413
+              protocol: TCP
+            - name: peer-udp
+              containerPort: 51413
+              protocol: UDP
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+          readinessProbe:
+            httpGet:
+              path: /transmission/web/
+              port: rpc
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: transmission-config
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: transmission-downloads
+        - name: defaults
+          configMap:
+            name: transmission-config

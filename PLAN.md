@@ -104,7 +104,11 @@ _Updated: 2026-10-13_
       `router_openwrt`) → all 4 node IPs; ingress-nginx runs on every node
       (control-plane toleration). New Ingresses just use `<name>.k8s.lan`.
       Vault moved to `vault.k8s.lan`; `/etc/hosts` hand-fix removed.
-- [ ] media stack (Jellyfin, Transmission) consumed from tower
+- [~] media stack — **Transmission moved to k8s** (ns `media`,
+      `transmission.k8s.lan`, LSIO 4.1.3) writing tower's
+      `/mnt/raid1/share/downloads` over NFS (RWX, shared with Jellyfin). Web UI
+      behind SSO; `/transmission/rpc` uses app basic auth. Remaining: **Jellyfin**
+      still on tower (Docker) — migrate next.
 - [x] **databases** — Postgres 18.6 on a tower iSCSI block LUN (`postgres`, 20 Gi),
       RWO static PV (`tower-iscsi-postgres`), ns `keycloak`; serves Keycloak
 - [x] **SSO / identity — Keycloak 26.8.1** (ns `keycloak`): Postgres backend,
@@ -123,6 +127,16 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Transmission moved from tower to k8s** (ns `media`,
+  `https://transmission.k8s.lan`, `ghcr.io/linuxserver/transmission:4.1.3`).
+  Tower's media library `/mnt/raid1/share/downloads` is NFS-exported to the
+  cluster (role `tower_storage`, `tower_nfs_media_export_dir`) and mounted RWX in
+  the pod — same files Jellyfin reads. Config on a dynamic `tower-nfs` PVC,
+  `settings.json` seeded from a ConfigMap. Web UI behind Keycloak SSO;
+  `/transmission/rpc` exempted in oauth2-proxy for API clients (Transmission
+  basic auth). Creds in Vault `secret/transmission` → ESO. No torrent state to
+  migrate (empty). Outbound-only peers for now. Manifests under
+  `k8s/apps/media/transmission/`. (Not yet applied to the cluster.)
 - 2026-10-13 — **SSO / identity live: Keycloak.** Postgres 18.6 (new 20 Gi tower
   LUN, static PV) backs **Keycloak 26.8.1** (ns `keycloak`, `keycloak.k8s.lan`).
   Bootstrap realm `tower` (clients `vault`, `oauth2-proxy`; test user) imported
