@@ -4,6 +4,31 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Vault auto-unseal + iSCSI multi-initiator incident
+
+- Added an **auto-unseal sidecar** to the Vault StatefulSet, reading unseal keys
+  from the `vault-unseal` Secret (created out-of-band; **not** in git).
+- **Incident:** adding the sidecar forced the Vault pod to reschedule from
+  `k8s-node-2` to `k8s-node-3`. Because the `k8s_iscsi_initiator` role had
+  pre-logged **every** node into the target, node-3 held a **stale (pre-format)
+  view** of the LUN. When node-3's kubelet attached it, `blkid` returned nothing
+  → it **reformatted** the volume, wiping the first Vault init (demo data only;
+  the unseal keys/root token were lost with it).
+- **Recovery:** `vault operator init` again (new 5/3 keys, saved off-repo),
+  re-created the KV engine, kubernetes auth, policy `eso-read`, role `eso` and
+  the `secret/demo` value; updated the `vault-unseal` Secret; restarted the pod.
+- **Fix:** removed pre-login from `k8s_iscsi_initiator` — the kubelet in-tree
+  iscsi plugin logs in on attach and out on detach, so only the node actually
+  using a volume holds a session (no cross-node stale views). Verified: pod
+  `2/2`, `Sealed=false`; `vault operator seal` → auto-unsealed in ~25 s;
+  `ClusterSecretStore` Ready and `ExternalSecret` `SecretSynced` again.
+- Standing risk documented in `PLAN.md` (multi-initiator); the real fix is a CSI
+  driver for dynamic provisioning.
+
+Sources: `kubectl`, `vault`, `iscsiadm`, `flux`. Keys off-repo.
+
+---
+
 ## 2026-10-13 — External Secrets Operator + Vault k8s-auth (secrets chain live)
 
 Executed from `archasus` (Flux + `kubectl`/`vault`).

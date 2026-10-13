@@ -34,6 +34,11 @@ _Updated: 2026-10-13_
       busybox pod (`k8s/apps/storage/iscsi-test-*.yaml`) wrote and read back
       `hello-from-pod`. Latency: ~0.8 ms/4 KiB fsync; 256 MiB write ≈ 624 MB/s
       (cached) / ~14 MB/s durable (HDD + router path — a bottleneck to revisit)
+- [!] **iSCSI multi-initiator hazard.** Pre-logging every node to the target left
+      stale (pre-format) device views elsewhere; a reschedule made another node's
+      kubelet reformat the LUN (wiped the first Vault init, 2026-10-13).
+      Mitigation: the initiator role no longer pre-logs-in — the kubelet plugin
+      manages login/logout per attach. Proper fix: a real CSI driver (Phase 1 dynamic).
 
 ## Phase 2 — cluster rebuild
 
@@ -57,8 +62,9 @@ _Updated: 2026-10-13_
       the Helm repo `helm.releases.hashicorp.com` is 403 from this network).
       Single node, Raft, tls off. Initialized + unsealed; keys/root token kept
       outside the repo (`~/.config/tower-cloud/vault-init.json`, 0600).
-- [?] auto-unseal: **none yet** — Vault is sealed after every restart, unseal by
-      hand (or wire a transit/KMS seal later)
+- [x] auto-unseal via a **sidecar** in the Vault StatefulSet reading the unseal
+      keys from the out-of-band `vault-unseal` Secret (never committed).
+      Verified: `vault operator seal` → auto-unsealed within ~25 s
 - [x] **External Secrets Operator v2.12.0** via Flux (Helm, namespace
       `external-secrets`); Vault kubernetes-auth role `eso`; `ClusterSecretStore`
       `vault` validated; first `ExternalSecret` synced (`secret/demo` →
@@ -81,6 +87,14 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Vault auto-unseal + iSCSI incident.** Adding the auto-unseal
+  sidecar rescheduled the Vault pod; `k8s-node-3` held a stale empty view of the
+  LUN (from the initiator role's pre-login) and its kubelet reformatted the
+  volume, wiping the first Vault init (demo data only). Recovered by re-init +
+  reconfiguring Vault. Root cause fixed by removing pre-login from
+  `k8s_iscsi_initiator` (kubelet manages login/logout). Auto-unseal sidecar using
+  the `vault-unseal` Secret verified (seal → unsealed ~25 s). ESO store + demo
+  ExternalSecret healthy again.
 - 2026-10-13 — **Secrets chain live (Phase 3): Vault → ESO → Secret.**
   External Secrets Operator v2.12.0 deployed via Flux (Helm). Vault configured
   out-of-band: KV-v2 at `secret/`, kubernetes auth method, policy `eso-read`,
