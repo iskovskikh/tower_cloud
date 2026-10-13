@@ -102,6 +102,11 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Block storage: static RWO PVs (decision).** No dynamic block
+  CSI fits tower (democratic-csi needs ZFS+targetcli; csi-driver-iscsi is
+  attach-only). Formalized the static pattern: shared StorageClass
+  `tower-iscsi-static`, helper `scripts/new-iscsi-pv.sh`, docs
+  `docs/storage/static-iscsi.md`. Dynamic block deferred.
 - 2026-10-13 — **Vault config codified (Phase 3 tail).** New Ansible role
   `vault_config` (`playbooks/vault.yml`) reconciles KV-v2 (`secret/`), the
   kubernetes auth method + config, policy `eso-read` and role `eso`, idempotently

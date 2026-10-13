@@ -4,6 +4,23 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — block CSI decision: static RWO PVs (no dynamic driver)
+
+- Evaluated dynamic **block** CSI for tower. None fits: democratic-csi's iSCSI
+  drivers require **ZFS** *and* `targetcli` (AUR-only on Arch, helpers broken),
+  and `csi-driver-iscsi` only attaches pre-created LUNs. Tower is mdadm RAID1 +
+  configfs LIO, no ZFS.
+- **Decision:** RWO block stays **static** (StorageClass `tower-iscsi-static`).
+  Revisit only if ZFS/DRBD on the running kernel proves viable.
+- Moved the `tower-iscsi-static` StorageClass out of the Vault dir to
+  `k8s/apps/storage/static-iscsi/`; added `scripts/new-iscsi-pv.sh` (renders a
+  PV+PVC for a new LUN) and `docs/storage/static-iscsi.md`. Vault keeps its
+  static PV (lun 1). `docs/storage/plan.md` updated with the decision.
+
+Sources: democratic-csi / csi-driver-iscsi docs; `kubectl`.
+
+---
+
 ## 2026-10-13 — Vault config codified (Ansible), demo ExternalSecret removed
 
 Executed from `archasus`.
