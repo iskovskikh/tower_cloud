@@ -1,0 +1,65 @@
+---
+# Codifies the Vault bootstrap configuration. Idempotent: mounts/auth methods are
+# created only when missing, policies/roles/config are reconciled on every run,
+# and CHANGED is reported only when something was created.
+#
+# Runs the vault CLI inside the Vault pod via `kubectl exec`, so no external
+# network exposure of the Vault API is needed.
+
+- name: vault_config | load admin token
+  ansible.builtin.set_fact:
+    vault_admin_token: >-
+      {{ (lookup('env', 'VAULT_TOKEN') | length > 0)
+         | ternary(lookup('env', 'VAULT_TOKEN'),
+                   (lookup('file', vault_init_file) | from_json).root_token) }}
+  no_log: true
+
+- name: vault_config | reconcile Vault configuration
+  ansible.builtin.shell:
+    cmd: |
+      kubectl -n {{ vault_namespace }} exec -i {{ vault_pod }} -c {{ vault_container }} -- \
+        env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" sh -s <<'EOS'
+      set -eu
+      changed=0
+
+      # KV-v2 secrets engine
+      if ! vault secrets list -format=json 2>/dev/null | grep -q '"{{ vault_kv_mount }}/"'; then
+        vault secrets enable -path={{ vault_kv_mount }} kv-v2 >/dev/null
+        changed=1
+      fi
+
+      # Kubernetes auth method
+      if ! vault auth list -format=json 2>/dev/null | grep -q '"{{ vault_k8s_auth_mount }}/"'; then
+        vault auth enable {{ vault_k8s_auth_mount }} >/dev/null
+        changed=1
+      fi
+
+      # Kubernetes auth config (reconciled every run)
+      vault read auth/{{ vault_k8s_auth_mount }}/config >/dev/null 2>&1 || changed=1
+      CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      vault write auth/{{ vault_k8s_auth_mount }}/config \
+        kubernetes_host="https://kubernetes.default.svc" \
+        kubernetes_ca_cert="$(cat "$CA")" >/dev/null
+
+      # ESO read policy (reconciled every run)
+      vault policy read {{ vault_eso_policy }} >/dev/null 2>&1 || changed=1
+      printf '%s\n' \
+        'path "{{ vault_kv_mount }}/data/*" { capabilities = ["read"] }' \
+        'path "{{ vault_kv_mount }}/metadata/*" { capabilities = ["read","list"] }' \
+        | vault policy write {{ vault_eso_policy }} - >/dev/null
+
+      # ESO role (reconciled every run)
+      vault read auth/{{ vault_k8s_auth_mount }}/role/{{ vault_eso_role }} >/dev/null 2>&1 || changed=1
+      vault write auth/{{ vault_k8s_auth_mount }}/role/{{ vault_eso_role }} \
+        bound_service_account_names={{ vault_eso_sa_name }} \
+        bound_service_account_namespaces={{ vault_eso_sa_namespace }} \
+        policies={{ vault_eso_policy }} \
+        ttl={{ vault_eso_role_ttl }} >/dev/null
+
+      if [ "$changed" = 1 ]; then echo CHANGED; else echo OK; fi
+      EOS
+  environment:
+    VAULT_TOKEN: "{{ vault_admin_token }}"
+  register: vault_config_run
+  changed_when: "'CHANGED' in vault_config_run.stdout"
+  no_log: true

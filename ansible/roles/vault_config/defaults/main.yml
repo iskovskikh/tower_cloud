@@ -1,0 +1,16 @@
+---
+# Codified Vault bootstrap configuration: KV-v2 engine, Kubernetes auth method,
+# and the External Secrets Operator policy + role. Replaces the one-off `vault`
+# commands. The admin token is read from $VAULT_TOKEN or the off-repo init file.
+vault_namespace: vault
+vault_pod: vault-0
+vault_container: vault
+vault_init_file: "{{ lookup('env', 'HOME') }}/.config/tower-cloud/vault-init.json"
+
+vault_kv_mount: secret
+vault_k8s_auth_mount: kubernetes
+vault_eso_policy: eso-read
+vault_eso_role: eso
+vault_eso_sa_name: external-secrets
+vault_eso_sa_namespace: external-secrets
+vault_eso_role_ttl: 1h

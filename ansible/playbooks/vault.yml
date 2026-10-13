@@ -1,0 +1,11 @@
+---
+# Codified Vault configuration (KV-v2, Kubernetes auth, ESO policy/role).
+# Runs locally against the Vault pod via kubectl exec; safe and idempotent.
+#   ansible-playbook playbooks/vault.yml
+
+- name: Vault — codified configuration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - vault_config
