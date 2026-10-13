@@ -80,7 +80,12 @@ _Updated: 2026-10-13_
       dynamic PVC validated (pod wrote/read `hello-nfs`; subdir created on tower).
       Pinned `vers=4.1` (4.2 OOMs the 4 GB nodes). Role `k8s_storage_client` also
       installs `nfs-common` on the nodes.
-- [ ] StorageClasses `tower-iscsi` (RWO block, needs a CSI driver) / `tower-s3`
+- [x] `tower-iscsi` (RWO block) as **static PVs** — reusable pattern +
+      `scripts/new-iscsi-pv.sh`; StorageClass `tower-iscsi-static`. **No** dynamic
+      block CSI fits this tower (democratic-csi needs ZFS+targetcli;
+      csi-driver-iscsi is attach-only) — dynamic block deliberately deferred.
+      See `docs/storage/static-iscsi.md`.
+- [ ] `tower-s3` (MinIO)
 - [x] ingress controller — **ingress-nginx v1.15.1** via Flux, run as a
       hostNetwork DaemonSet (no cloud LB): any node IP `:80` (`:443` free) is an
       entry point, reachable from the LAN through the router. Class `nginx`

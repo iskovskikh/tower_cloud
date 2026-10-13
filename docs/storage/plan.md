@@ -1,7 +1,8 @@
 # Storage plan — tower as a storage appliance for k8s
 
-**Status:** draft / PoC plan. **Not implemented.** Read-only repo — nothing here
-has been applied to any host yet.
+**Status:** PoC — partially implemented (2026-10-13). Live: NFS (RWX) via
+`csi-driver-nfs` (`tower-nfs`) and **static** RWO iSCSI PVs
+(`tower-iscsi-static`). Not yet: MinIO/S3.
 **Drafted:** 2026-10-13 · observed from `archasus`.
 
 Goal: turn **tower** (`192.168.30.200`) into the cluster's storage appliance
@@ -76,6 +77,13 @@ Pick one driver (trade-offs below) and replace the static PV with a
 
 Both add kernel modules (ZFS/DKMS or DRBD) on a bleeding-edge Arch kernel —
 the main hidden risk.
+
+**Decision (2026-10-13): neither.** No off-the-shelf dynamic block CSI fits this
+tower (mdadm RAID1 + configfs LIO, no ZFS): democratic-csi's iSCSI drivers need
+ZFS **and** `targetcli` (AUR-only on Arch), and `csi-driver-iscsi` only attaches
+pre-created LUNs. So RWO block stays **static PVs** (StorageClass
+`tower-iscsi-static`) — see [`static-iscsi.md`](static-iscsi.md). Revisit only if
+ZFS/DRBD on this kernel proves viable.
 
 ### Phase 2 — object storage (S3)
 
