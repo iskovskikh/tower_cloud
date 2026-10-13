@@ -1,0 +1,72 @@
+# Jellyfin state (/config: library SQLite DBs, metadata, plugins, user data).
+# SQLite needs real POSIX locking and a single writer, so this lives on a
+# dedicated tower iSCSI LUN (backstore "jellyfin" = lun 4, 20 GiB) as an RWO
+# static PV — the same pattern as Postgres/Vault/Garage.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tower-iscsi-jellyfin
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: tower-iscsi-static
+  iscsi:
+    targetPortal: 192.168.30.200:3260
+    iqn: iqn.2026-10.lan.tower:k8s
+    lun: 4
+    fsType: ext4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: tower-iscsi-static
+  volumeName: tower-iscsi-jellyfin
+  resources:
+    requests:
+      storage: 20Gi
+---
+# Media library: the same tower export Transmission writes to
+# (/mnt/raid1/share/downloads), mounted RWX at /media. A PV binds to exactly one
+# PVC, so Jellyfin gets its own PV over the shared export (distinct
+# volumeHandle from the Transmission one).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tower-nfs-media-jellyfin
+spec:
+  capacity:
+    storage: 4Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: tower-nfs
+  mountOptions:
+    - vers=4.1
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: 192.168.30.200#/mnt/raid1/share/downloads#jellyfin
+    volumeAttributes:
+      server: 192.168.30.200
+      share: /mnt/raid1/share/downloads
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-media
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: tower-nfs
+  volumeName: tower-nfs-media-jellyfin
+  resources:
+    requests:
+      storage: 4Ti
