@@ -35,6 +35,8 @@ spec:
             # TLS to Keycloak is the internal CA, not mounted here: skip verify.
             - --ssl-insecure-skip-verify=true
             - --cookie-secure=true
+            # Share the session cookie across all protected *.k8s.lan hosts.
+            - --cookie-domain=.k8s.lan
             - --whitelist-domain=.k8s.lan
           env:
             - name: OAUTH2_PROXY_CLIENT_ID
