@@ -24,17 +24,18 @@ Priority for now is a **PoC on what already exists**; durability comes later.
   route/firewall between them is **unconfirmed**.
 - MinIO, NFS and SMB were **removed from tower on 2026-10-12** (see CHANGELOG).
 
-## Target architecture (PoC)
+## Target architecture (implemented)
 
 ```
 tower 192.168.30.200  (storage appliance)
- ├─ iSCSI target :3260   LIO/targetcli, fileio backstore on /mnt/raid1/k8s-iscsi
- └─ MinIO S3     :9000   buckets for object workloads
-        │   VLAN120 ↔ 192.168.30.0/24  (verify route + firewal!)
+ ├─ NFS export  :2049   /mnt/raid1/k8s-nfs       -> StorageClass tower-nfs (RWX)
+ └─ iSCSI LIO   :3260   fileio LUNs  /mnt/raid1/k8s-iscsi/*.img  (configfs)
+        │   VLAN120 <-> 192.168.30.0/24, router forwards 2049/3260/9000
         ▼
 k8s (k8s-node-1..4, VMs on proxmox)
- ├─ StorageClass tower-iscsi (RWO, xfs/ext4) → PVCs on demand
- └─ StorageClass tower-s3    (csi-s3)         → optional
+ ├─ StorageClass tower-nfs         (RWX, dynamic — csi-driver-nfs)
+ ├─ StorageClass tower-iscsi-static (RWO block, static PVs: vault, garage)
+ └─ Garage S3 (:3900) on a tower block LUN — object storage
 ```
 
 ## Phases
@@ -87,8 +88,9 @@ ZFS/DRBD on this kernel proves viable.
 
 ### Phase 2 — object storage (S3)
 
-- Run **MinIO** on tower (container) on `:9000`; apps use the **S3 API** with
-  credentials — no CSI needed.
+- Run an S3 server on tower; apps use the **S3 API** with credentials — no CSI
+  needed. **Implemented with [Garage](https://garagehq.deuxfleurs.fr/)** (v2.4.1)
+  instead of MinIO, whose container images became gated/unavailable in 2026.
 - Only if a pod needs a *filesystem view* of a bucket, add a CSI-S3 driver
   (e.g. `csi-s3` / geesefs) as an optional `StorageClass`.
 

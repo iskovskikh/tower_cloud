@@ -85,7 +85,11 @@ _Updated: 2026-10-13_
       block CSI fits this tower (democratic-csi needs ZFS+targetcli;
       csi-driver-iscsi is attach-only) — dynamic block deliberately deferred.
       See `docs/storage/static-iscsi.md`.
-- [ ] `tower-s3` (MinIO)
+- [x] `tower-s3` — **Garage v2.4.1** (MinIO images are now gated — `unauthorized`):
+      single node on a tower block LUN (lun 2); `garage.toml` rendered by ESO
+      from Vault (`secret/garage` → rpc_secret/admin_token; S3 keys in
+      `secret/garage-s3`). Validated with `aws-cli` (put/list in bucket
+      `artifacts`).
 - [x] ingress controller — **ingress-nginx v1.15.1** via Flux, run as a
       hostNetwork DaemonSet (no cloud LB): any node IP `:80` (`:443` free) is an
       entry point, reachable from the LAN through the router. Class `nginx`
@@ -102,6 +106,12 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Object storage live: Garage (replaces MinIO).** MinIO container
+  images are now gated (`unauthorized` in docker.io/quay.io), so deployed
+  **Garage v2.4.1** instead: single node on a dedicated tower block LUN (lun 2),
+  `garage.toml` rendered by **ESO** from Vault (`secret/garage` + `secret/garage-s3`),
+  bucket `artifacts` + key `apps`. Validated with `aws-cli` (put/list). See
+  `k8s/apps/storage/garage/`.
 - 2026-10-13 — **Block storage: static RWO PVs (decision).** No dynamic block
   CSI fits tower (democratic-csi needs ZFS+targetcli; csi-driver-iscsi is
   attach-only). Formalized the static pattern: shared StorageClass

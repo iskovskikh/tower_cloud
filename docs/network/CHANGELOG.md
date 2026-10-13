@@ -4,6 +4,29 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Object storage: Garage (MinIO substituted)
+
+Executed from `archasus` (Flux + ESO + Vault).
+
+- **MinIO is no longer usable:** `docker.io/minio/minio` is gone ("object not
+  found") and `quay.io/minio/minio` returns `unauthorized` (MinIO moved to a
+  gated/subscription model). Substituted **Garage v2.4.1** (`dxflrs/garage`).
+- Added a dedicated tower iSCSI LUN **`garage`** (50 GiB, **lun 2**); static PV/
+  PVC (StorageClass `tower-iscsi-static`).
+- Deployed Garage (`k8s/apps/storage/garage/`) via Flux. Its `garage.toml` is
+  rendered by an **ExternalSecret** from Vault: `secret/garage`
+  (`rpc_secret`, `admin_token`, created out-of-band). No secret values in git.
+- Bootstrap (one-off): `garage layout assign -z dc1 -c 45G <node>` + `layout
+  apply --version 1`; created bucket `artifacts` and key `apps`; stored the S3
+  key in Vault `secret/garage-s3` (`access_key`/`secret_key`/`endpoint`/region/
+  bucket) for workloads via ESO.
+- Validated: `aws-cli` pod uploaded and listed `s3://artifacts/test.txt`.
+- Services: S3 `:3900`, web `:3902`, admin `:3903` (ClusterIP `garage.garage`).
+
+Sources: `kubectl`, `garage`, `aws-cli`, `vault`. Key values not recorded here.
+
+---
+
 ## 2026-10-13 — block CSI decision: static RWO PVs (no dynamic driver)
 
 - Evaluated dynamic **block** CSI for tower. None fits: democratic-csi's iSCSI
