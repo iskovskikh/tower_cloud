@@ -1,0 +1,11 @@
+# Dynamic RWO volumes on the node's local disk, via local-path-provisioner.
+# For state that should NOT be on tower (see docs/storage/local-path.md).
+# WaitForFirstConsumer: the PV is created on the node where the consuming pod
+# lands (the volume is node-local, so it cannot float between nodes).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: tower-local
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
