@@ -1,0 +1,21 @@
+---
+# Workers: join the cluster (skip if already joined).
+
+- name: Check if already joined
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Get join command from the control plane
+  ansible.builtin.command:
+    cmd: kubeadm token create --print-join-command
+  delegate_to: "{{ groups['k8s_control_plane'][0] }}"
+  run_once: true
+  register: join_cmd
+  changed_when: false
+  when: not kubelet_conf.stat.exists
+
+- name: Join the cluster
+  ansible.builtin.command:
+    cmd: "{{ join_cmd.stdout }} --cri-socket=unix:///var/run/containerd/containerd.sock"
+  when: not kubelet_conf.stat.exists

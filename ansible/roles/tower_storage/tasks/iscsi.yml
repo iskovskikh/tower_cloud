@@ -1,0 +1,63 @@
+---
+# iSCSI target (LIO, in-kernel) exposed to the k8s nodes as RWO block volumes.
+# Backing store = sparse fileio files on the data array (no repartitioning).
+# Configured directly through configfs — Arch keeps targetcli/python-rtslib in
+# the AUR only. The bring-up script is idempotent and replays at boot.
+
+- name: iscsi | persist kernel modules across reboot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/lio.conf
+    content: |
+      target_core_mod
+      iscsi_target_mod
+      target_core_file
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: iscsi | create backing directory
+  ansible.builtin.file:
+    path: "{{ tower_iscsi_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: iscsi | install target bring-up script
+  ansible.builtin.template:
+    src: tower-iscsi-up.sh.j2
+    dest: /usr/local/sbin/tower-iscsi-up.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: iscsi | bring up target
+  ansible.builtin.command:
+    cmd: /usr/local/sbin/tower-iscsi-up.sh
+  register: tower_iscsi_up
+  changed_when: "'CHANGED' in tower_iscsi_up.stdout"
+
+- name: iscsi | install boot unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/tower-iscsi.service
+    content: |
+      [Unit]
+      Description=tower LIO iSCSI target (configfs)
+      After=local-fs.target network-online.target
+      Wants=network-online.target
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/tower-iscsi-up.sh
+      [Install]
+      WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload systemd
+
+- name: iscsi | enable and start boot unit
+  ansible.builtin.service:
+    name: tower-iscsi
+    state: started
+    enabled: true

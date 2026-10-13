@@ -1,0 +1,26 @@
+---
+# OpenWrt router: routing + firewall between the LAN, the server segment
+# (192.168.30.0/24, zone "srv") and the cluster VLANs.
+#
+# The k8s nodes live in VLAN 120 (zone "vlan120") and mount storage from tower
+# in the "srv" zone. Both networks are directly connected on the router, but
+# the default firewall REJECTs forwarding between zones, so we must add an
+# explicit forwarding pair plus per-port allow rules.
+#
+# See docs/storage/plan.md (storage ports 2049/3260/9000).
+
+# zone -> zone forwarding pairs to permit
+router_openwrt_forwardings:
+  - name: k8s_v120_to_srv
+    src: vlan120
+    dest: srv
+
+# Ports opened through the router. Return traffic is stateful (conntrack).
+router_openwrt_rules:
+  - name: k8s_v120_srv_storage
+    title: "k8s storage: NFS/iSCSI/MinIO -> tower"
+    src: vlan120
+    dest: srv
+    proto: tcp
+    ports: "2049 3260 9000"
+    target: ACCEPT

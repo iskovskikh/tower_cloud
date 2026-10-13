@@ -1,0 +1,15 @@
+---
+# Storage appliance on tower: NFS (RWX), iSCSI/LIO (RWO), MinIO (S3).
+# See docs/storage/plan.md and docs/adr/0001-infrastructure-as-code.md.
+
+- name: NFS export
+  ansible.builtin.import_tasks: nfs.yml
+  when: tower_nfs_enabled | bool
+
+- name: iSCSI LIO target
+  ansible.builtin.import_tasks: iscsi.yml
+  when: tower_iscsi_enabled | bool
+
+- name: MinIO object storage
+  ansible.builtin.import_tasks: minio.yml
+  when: tower_minio_enabled | bool

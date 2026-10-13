@@ -1,0 +1,142 @@
+---
+# Prerequisites shared by all cluster nodes: optionally wipe any previous
+# kubeadm state (only when k8s_reset=true), fix the apt repos, configure
+# containerd (CRI + systemd cgroup) and install the k8s packages.
+
+- name: Reset previous kubeadm state (destructive, opt-in)
+  when: k8s_reset | bool
+  block:
+    - name: Stop kubelet if present
+      ansible.builtin.systemd:
+        name: kubelet
+        state: stopped
+      failed_when: false
+
+    - name: Reset previous kubeadm state
+      ansible.builtin.command:
+        cmd: kubeadm reset -f --cri-socket=unix:///var/run/containerd/containerd.sock
+      failed_when: false
+      changed_when: true
+
+    - name: Remove leftover containers
+      ansible.builtin.shell:
+        cmd: |
+          if command -v crictl >/dev/null 2>&1; then
+            crictl rm -f $(crictl ps -aq) 2>/dev/null || true
+          fi
+      changed_when: false
+
+    - name: Remove leftover kubernetes state
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/kubernetes
+        - /var/lib/etcd
+        - /etc/cni/net.d
+        - "/home/{{ ansible_user }}/.kube"
+
+- name: Disable swap (now)
+  ansible.builtin.command:
+    cmd: swapoff -a
+  changed_when: false
+
+- name: Disable swap (persist in fstab)
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s+.*)$'
+    replace: '# \1'
+
+- name: Kernel modules config
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: "overlay\nbr_netfilter\n"
+
+- name: Load kernel modules
+  ansible.builtin.command:
+    cmd: "modprobe {{ item }}"
+  loop: [overlay, br_netfilter]
+  changed_when: false
+
+- name: Sysctl for k8s
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-kubernetes-cri.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables=1
+      net.bridge.bridge-nf-call-ip6tables=1
+      net.ipv4.ip_forward=1
+
+- name: Apply sysctl
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: false
+
+# --- apt: replace the (expired-key) k8s repo BEFORE any apt update ----------
+
+- name: Ensure gnupg + ca-certificates present (use existing cache)
+  ansible.builtin.apt:
+    name: [gnupg, ca-certificates]
+    state: present
+    update_cache: false
+
+- name: Kubernetes apt key
+  ansible.builtin.get_url:
+    url: "{{ k8s_apt_repo }}Release.key"
+    dest: /tmp/kubernetes-release.key
+    mode: '0644'
+
+- name: Install kubernetes apt keyring
+  ansible.builtin.shell:
+    cmd: |
+      install -d -m 0755 /etc/apt/keyrings
+      gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
+  changed_when: true
+
+- name: Kubernetes apt source (replaces the expired v1.28 repo)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] {{ k8s_apt_repo }} /\n"
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Upgrade containerd.io (needs 2.x for current k8s)
+  ansible.builtin.apt:
+    name: containerd.io
+    state: latest
+
+- name: Generate default containerd config
+  ansible.builtin.shell:
+    cmd: containerd config default > /etc/containerd/config.toml
+  changed_when: true
+
+- name: Enable systemd cgroup driver in containerd
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    replace: 'SystemdCgroup = true'
+
+- name: Restart + enable containerd
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+    enabled: true
+
+- name: Unhold k8s packages (if held)
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: install
+  loop: [kubelet, kubeadm, kubectl]
+  failed_when: false
+
+- name: Install kubelet, kubeadm, kubectl
+  ansible.builtin.apt:
+    name: [kubelet, kubeadm, kubectl]
+    state: latest
+
+- name: Hold k8s packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: [kubelet, kubeadm, kubectl]

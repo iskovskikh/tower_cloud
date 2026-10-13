@@ -1,0 +1,9 @@
+---
+# iSCSI initiator on the k8s nodes (tower block storage). Safe and idempotent.
+# Separate from site.yml because that pulls in the non-idempotent k8s_install.
+
+- name: kubernetes nodes — iSCSI initiator for tower block storage
+  hosts: k8s
+  become: true
+  roles:
+    - k8s_iscsi_initiator

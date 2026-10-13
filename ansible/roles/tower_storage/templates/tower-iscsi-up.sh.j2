@@ -1,0 +1,74 @@
+#!/bin/sh
+# Managed by Ansible (roles/tower_storage). Brings up the LIO iSCSI target on
+# tower. Idempotent: only creates/updates objects that are missing or differ,
+# and prints CHANGED when it modified anything.
+#
+# Configured directly through configfs because Arch keeps targetcli /
+# python-rtslib in the AUR only. Replayed at boot by tower-iscsi.service.
+set -eu
+
+TGT=/sys/kernel/config/target
+IQN="{{ tower_iscsi_iqn }}"
+PORTAL_IP="{{ tower_iscsi_portal_ip }}"
+PORTAL_PORT="{{ tower_iscsi_portal_port }}"
+changed=0
+
+ensure_dir() { [ -d "$1" ] || { mkdir "$1"; changed=1; }; }
+set_attr() { [ "$(cat "$1" 2>/dev/null || true)" = "$2" ] || { echo "$2" > "$1"; changed=1; }; }
+
+# kernel modules (idempotent)
+for m in target_core_mod iscsi_target_mod target_core_file; do
+  modprobe "$m" 2>/dev/null || true
+done
+
+# backing files
+mkdir -p "{{ tower_iscsi_dir }}"
+{% for vol in tower_iscsi_volumes %}
+[ -f "{{ tower_iscsi_dir }}/{{ vol.name }}.img" ] || { fallocate -l {{ vol.size }} "{{ tower_iscsi_dir }}/{{ vol.name }}.img"; changed=1; }
+{% endfor %}
+
+# fabric root + fileio plugin instance
+ensure_dir "$TGT/iscsi"
+ensure_dir "$TGT/core/fileio_0"
+
+# backstores
+{% for vol in tower_iscsi_volumes %}
+BF="$TGT/core/fileio_0/{{ vol.name }}"
+if [ ! -d "$BF" ]; then
+  mkdir "$BF"
+  echo "fd_dev_name={{ tower_iscsi_dir }}/{{ vol.name }}.img,fd_dev_size=$(stat -c %s "{{ tower_iscsi_dir }}/{{ vol.name }}.img")" > "$BF/control"
+  changed=1
+fi
+set_attr "$BF/enable" 1
+{% endfor %}
+
+# target + tpg
+ensure_dir "$TGT/iscsi/$IQN"
+ensure_dir "$TGT/iscsi/$IQN/tpgt_1"
+
+# tpg attributes
+ATTR="$TGT/iscsi/$IQN/tpgt_1/attrib"
+set_attr "$ATTR/authentication" 0
+set_attr "$ATTR/demo_mode_write_protect" 0
+set_attr "$ATTR/generate_node_acls" {{ tower_iscsi_generate_node_acls }}
+set_attr "$ATTR/cache_dynamic_acls" 1
+
+# LUNs
+{% for vol in tower_iscsi_volumes %}
+LUNDIR="$TGT/iscsi/$IQN/tpgt_1/lun/lun_{{ loop.index0 }}"
+ensure_dir "$LUNDIR"
+[ -e "$LUNDIR/{{ vol.name }}" ] || { ln -s "$TGT/core/fileio_0/{{ vol.name }}" "$LUNDIR/{{ vol.name }}"; changed=1; }
+{% endfor %}
+
+# ACLs (only when initiators are pinned; otherwise dynamic ACLs are used)
+{% for ini in tower_iscsi_initiators %}
+ensure_dir "$TGT/iscsi/$IQN/tpgt_1/acls/{{ ini }}"
+{% endfor %}
+
+# portal
+ensure_dir "$TGT/iscsi/$IQN/tpgt_1/np/$PORTAL_IP:$PORTAL_PORT"
+
+# enable the tpg last
+set_attr "$TGT/iscsi/$IQN/tpgt_1/enable" 1
+
+if [ "$changed" = 1 ]; then echo CHANGED; else echo OK; fi

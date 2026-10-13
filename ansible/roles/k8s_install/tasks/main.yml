@@ -1,0 +1,6 @@
+---
+# The k8s_install role is driven per-stage from playbooks/k8s.yml via
+# `tasks_from`: prereq -> control_plane -> worker. Nothing to run from main.yml.
+- name: k8s_install is invoked with tasks_from (prereq/control_plane/worker)
+  ansible.builtin.debug:
+    msg: "See playbooks/k8s.yml"

@@ -1,0 +1,38 @@
+---
+# iSCSI initiator on the k8s nodes so pods can attach block volumes from tower.
+# A CSI driver (dynamic provisioning later) manages discovery/login itself;
+# this role makes the static Phase-1 smoke test reproducible.
+
+- name: initiator | install open-iscsi
+  ansible.builtin.apt:
+    name: open-iscsi
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: initiator | ensure iscsid is enabled and running
+  ansible.builtin.service:
+    name: iscsid
+    state: started
+    enabled: true
+
+- name: initiator | discover targets on tower
+  ansible.builtin.command:
+    cmd: iscsiadm -m discovery -t sendtargets -p {{ tower_iscsi_portal }}
+  register: tower_iscsi_disc
+  changed_when: false
+
+- name: initiator | log in to the tower target
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      iscsiadm -m node -T {{ tower_iscsi_target_iqn }} -p {{ tower_iscsi_portal }} \
+        -o update -n node.startup -v automatic >/dev/null
+      if iscsiadm -m session 2>/dev/null | grep -q '{{ tower_iscsi_target_iqn }}'; then
+        echo OK
+      else
+        iscsiadm -m node -T {{ tower_iscsi_target_iqn }} -p {{ tower_iscsi_portal }} --login >/dev/null
+        echo CHANGED
+      fi
+  register: tower_iscsi_login
+  changed_when: "'CHANGED' in tower_iscsi_login.stdout"

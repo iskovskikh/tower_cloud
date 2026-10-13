@@ -1,0 +1,4 @@
+---
+# iSCSI initiator settings. Keep in sync with roles/tower_storage defaults.
+tower_iscsi_portal: "192.168.30.200:3260"
+tower_iscsi_target_iqn: "iqn.2026-10.lan.tower:k8s"

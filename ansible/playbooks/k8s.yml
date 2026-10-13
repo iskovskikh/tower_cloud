@@ -1,0 +1,26 @@
+---
+# Rebuild the kubeadm cluster. Run stages in order; each play re-runs safely.
+
+- name: kubernetes — prerequisites (all nodes)
+  hosts: k8s
+  become: true
+  tasks:
+    - import_role:
+        name: k8s_install
+        tasks_from: prereq
+
+- name: kubernetes — control plane
+  hosts: k8s_control_plane
+  become: true
+  tasks:
+    - import_role:
+        name: k8s_install
+        tasks_from: control_plane
+
+- name: kubernetes — workers
+  hosts: k8s_workers
+  become: true
+  tasks:
+    - import_role:
+        name: k8s_install
+        tasks_from: worker

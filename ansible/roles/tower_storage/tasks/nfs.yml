@@ -1,0 +1,30 @@
+---
+# NFS server: shared read-write filesystem for the cluster (RWX).
+
+- name: nfs | install nfs-utils
+  community.general.pacman:
+    name: nfs-utils
+    state: present
+
+- name: nfs | create export directory
+  ansible.builtin.file:
+    path: "{{ tower_nfs_export_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0775"
+
+- name: nfs | write /etc/exports
+  ansible.builtin.template:
+    src: exports.j2
+    dest: /etc/exports
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nfs-server
+
+- name: nfs | enable and start nfs-server
+  ansible.builtin.service:
+    name: nfs-server
+    state: started
+    enabled: true

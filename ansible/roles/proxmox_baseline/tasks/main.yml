@@ -1,0 +1,6 @@
+---
+# Baseline configuration for the Proxmox VE host (repos, users, helpers).
+
+- name: proxmox_baseline role is a placeholder
+  ansible.builtin.debug:
+    msg: "TODO: proxmox baseline (repos, admin user, node cert)"

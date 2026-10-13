@@ -1,0 +1,3 @@
+{% for client in tower_nfs_clients %}
+{{ tower_nfs_export_dir }} {{ client }}({{ tower_nfs_options }})
+{% endfor %}

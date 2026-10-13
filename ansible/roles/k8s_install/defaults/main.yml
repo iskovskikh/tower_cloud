@@ -1,0 +1,18 @@
+---
+# Kubernetes cluster rebuild (kubeadm) — see docs/adr/0001.
+k8s_minor: "1.37"
+k8s_apt_repo: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_minor }}/deb/"
+
+# Destructive: wipe any previous kubeadm state before (re)building. Leave false
+# for a normal, idempotent reconcile; set true only for a deliberate rebuild:
+#   ansible-playbook playbooks/k8s.yml -e k8s_reset=true
+k8s_reset: false
+
+pod_cidr: "10.244.0.0/16"
+service_cidr: "10.96.0.0/12"
+
+control_plane_endpoint: "10.10.120.101:6443"
+apiserver_advertise_address: "10.10.120.101"
+
+calico_version: "v3.33.0"
+tigera_operator_manifest: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"

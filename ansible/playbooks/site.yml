@@ -1,0 +1,14 @@
+---
+- name: tower — storage appliance (NFS / iSCSI / MinIO)
+  hosts: tower
+  become: true
+  roles:
+    - tower_storage
+
+- name: router — routes + firewall for the server/VLAN segments
+  hosts: router
+  gather_facts: false   # OpenWrt has no Python; the role uses raw
+  roles:
+    - router_openwrt
+
+- import_playbook: k8s.yml

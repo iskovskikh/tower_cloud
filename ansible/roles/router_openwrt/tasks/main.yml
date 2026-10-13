@@ -1,0 +1,48 @@
+---
+# OpenWrt router: routing + firewall between LAN, server segment and VLAN 120.
+# Configured declaratively via uci; storage ports 2049/3260/9000 must reach the
+# cluster. Idempotent: options are only written when they differ, and the
+# firewall reloads only when something actually changed.
+#
+# Driven through `raw` because OpenWrt has no Python, so the usual modules
+# (shell/command/community.general.uci) cannot run there.
+
+- name: Apply storage forwarding + firewall rules (uci)
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+
+    ensure_type() {
+      cur="$(uci -q get firewall.$1 2>/dev/null || true)"
+      if [ "$cur" != "$2" ]; then uci set firewall.$1="$2"; changed=1; fi
+    }
+    set_opt() {
+      cur="$(uci -q get firewall.$1.$2 2>/dev/null || true)"
+      if [ "$cur" != "$3" ]; then uci set firewall.$1.$2="$3"; changed=1; fi
+    }
+
+    {% for f in router_openwrt_forwardings %}
+    ensure_type {{ f.name }} forwarding
+    set_opt {{ f.name }} src {{ f.src }}
+    set_opt {{ f.name }} dest {{ f.dest }}
+    {% endfor %}
+
+    {% for r in router_openwrt_rules %}
+    ensure_type {{ r.name }} rule
+    set_opt {{ r.name }} name "{{ r.title }}"
+    set_opt {{ r.name }} src {{ r.src }}
+    set_opt {{ r.name }} dest {{ r.dest }}
+    set_opt {{ r.name }} proto {{ r.proto }}
+    set_opt {{ r.name }} dest_port "{{ r.ports }}"
+    set_opt {{ r.name }} target {{ r.target }}
+    {% endfor %}
+
+    if [ "$changed" = 1 ]; then
+      uci commit firewall
+      echo CHANGED
+    else
+      echo OK
+    fi
+  register: router_fw
+  changed_when: "'CHANGED' in router_fw.stdout"
+  notify: reload firewall

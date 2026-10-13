@@ -1,0 +1,41 @@
+---
+# tower as the cluster storage appliance (СХД): NFS (RWX), iSCSI/LIO (RWO
+# block) and MinIO (S3). Backing storage lives on the data array /mnt/raid1.
+# See docs/storage/plan.md and docs/adr/0001-infrastructure-as-code.md.
+
+# --- NFS: shared read-write filesystem for the cluster (RWX) --------------
+tower_nfs_enabled: true
+tower_nfs_export_dir: /mnt/raid1/k8s-nfs
+tower_nfs_clients:
+  - 10.10.120.0/24     # k8s nodes (VLAN 120)
+  - 192.168.30.0/24    # server segment
+tower_nfs_options: "rw,sync,no_subtree_check,no_root_squash,insecure"
+
+# --- iSCSI: block volumes for databases (RWO) -----------------------------
+# Implemented directly through configfs (no targetcli): Arch keeps targetcli /
+# python-rtslib in the AUR only, and the local AUR helpers are broken.
+tower_iscsi_enabled: true
+tower_iscsi_dir: /mnt/raid1/k8s-iscsi
+tower_iscsi_iqn: "iqn.2026-10.lan.tower:k8s"
+tower_iscsi_portal_ip: "0.0.0.0"
+tower_iscsi_portal_port: 3260
+tower_iscsi_volumes:
+  - name: vol1
+    size: 10G
+# Explicit initiator IQNs. Empty => dynamic ACLs (any initiator may attach) —
+# fine for the PoC, tighten before production.
+tower_iscsi_initiators: []
+# When initiators are pinned, disable dynamic ACLs so only they may attach.
+tower_iscsi_generate_node_acls: "{{ 0 if (tower_iscsi_initiators | length > 0) else 1 }}"
+
+# --- MinIO: S3 object storage ---------------------------------------------
+# Deferred until a secret source exists (Vault + ESO, Phase 3).
+tower_minio_enabled: false
+tower_minio_data_dir: /mnt/raid1/minio
+tower_minio_image: "minio/minio:latest"
+tower_minio_api_port: 9000
+tower_minio_console_port: 9001
+tower_minio_root_user: minioadmin
+# Never store the password in the repo: provide MINIO_ROOT_PASSWORD in the
+# environment (later: Vault + External Secrets).
+tower_minio_root_password: "{{ lookup('env', 'MINIO_ROOT_PASSWORD') | default('', true) }}"
