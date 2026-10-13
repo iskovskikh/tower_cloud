@@ -25,7 +25,7 @@ router_openwrt_rules:
     src: vlan120
     dest: srv
     proto: tcp
-    ports: "2049 3260 3900"
+    ports: "2049 3260 3900 5432"
     target: ACCEPT
 
 # --- DNS (dnsmasq) ----------------------------------------------------------

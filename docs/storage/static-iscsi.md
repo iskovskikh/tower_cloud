@@ -7,7 +7,11 @@ drivers all require ZFS (and `targetcli`, which is AUR-only on Arch), and
 static PersistentVolumes**, while RWX filesystems use the dynamic
 `tower-nfs` StorageClass (csi-driver-nfs).
 
-This is the same path Vault uses for its Raft data.
+This is the same path Vault uses for its Raft data. Per
+[ADR-0002](../adr/0002-stateful-services-on-tower.md), block LUNs are limited to
+what a k8s pod genuinely needs as local block — **Vault** (Raft) and
+**OpenCloud** metadata (POSIX xattrs). Databases and object storage live on
+tower, not on LUNs.
 
 ## Add a block volume
 
@@ -16,27 +20,49 @@ This is the same path Vault uses for its Raft data.
 
    ```yaml
    tower_iscsi_volumes:
-     - { name: vol1,  size: 10G }   # lun 0
-     - { name: vault, size: 10G }   # lun 1
-     - { name: mydb,  size: 20G }   # lun 2  <-- new
+     - { name: vault,    size: 10G, lun: 1 }
+     - { name: jellyfin, size: 20G, lun: 4 }
+     - { name: mydb,     size: 20G, lun: 6 }   # <-- new (next free LUN number)
    ```
 
-   The **LUN index is the position in this list** (0-based). Then apply:
+   The **LUN number is explicit** (`lun:`), not the list position, so you can
+   free a slot without renumbering the others. Pick an unused number and apply:
 
    ```bash
    ansible-playbook ansible/playbooks/site.yml --limit tower
    ansible-playbook ansible/playbooks/k8s-storage.yml   # rescan nodes (optional)
    ```
 
-2. **Render the PV + PVC** with the helper (uses the LUN index from step 1):
+2. **Render the PV + PVC** with the helper (uses the LUN number from step 1):
 
    ```bash
-   scripts/new-iscsi-pv.sh mydb 2 20Gi
+   scripts/new-iscsi-pv.sh mydb 6 20Gi
    ```
 
    Commit the output under `k8s/` (Flux applies it) and set
    `spec.volumeName` so the PVC binds to that PV. Reference the PVC from a
    workload with `accessModes: [ReadWriteOnce]`.
+
+## Retire a block volume
+
+1. Move the data off / confirm nothing uses it, then delete the PV + PVC and the
+   entry from `tower_iscsi_volumes` in `defaults/main.yml`. Re-run the tower
+   play (it only *creates*; it never deletes).
+2. On **tower**, drop the LUN and backstore and delete the backing file:
+
+   ```bash
+   T=/sys/kernel/config/target/iscsi/iqn.2026-10.lan.tower:k8s/tpgt_1/lun
+   C=/sys/kernel/config/target/core/fileio_0
+   lun=6  # the number being retired
+   sudo rm -f "$T/lun_$lun/mydb"        # unlink the backstore from the LUN
+   sudo rmdir "$T/lun_$lun"
+   sudo sh -c "echo 0 > $C/mydb/enable" 2>/dev/null || true
+   sudo rmdir "$C/mydb"
+   sudo rm -f /mnt/raid1/k8s-iscsi/mydb.img   # frees the array space
+   ```
+
+   Because LUN numbers are explicit, the surviving volumes keep their indices
+   and their PVs keep working.
 
 ## Notes
 

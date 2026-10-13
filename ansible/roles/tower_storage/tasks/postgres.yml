@@ -1,0 +1,43 @@
+---
+# Postgres on tower, run as a Docker container with its data directory on the
+# data array. A single instance serves the cluster's apps (Keycloak today) over
+# the network — no iSCSI LUN / PV / PVC. See docs/storage/postgres.md.
+
+- name: postgres | require password
+  ansible.builtin.assert:
+    that: tower_postgres_password | length > 0
+    fail_msg: >-
+      Set POSTGRES_PASSWORD in the environment (secrets are not stored in the
+      repo). Reuse the value at Vault secret/keycloak (property db_password).
+
+- name: postgres | install Docker SDK for Ansible
+  community.general.pacman:
+    name:
+      - python-docker
+      - python-requests
+    state: present
+
+- name: postgres | create data directory
+  ansible.builtin.file:
+    path: "{{ tower_postgres_data_dir }}"
+    state: directory
+    owner: "999"
+    group: "999"
+    mode: "0700"
+
+- name: postgres | run container
+  community.docker.docker_container:
+    name: postgres
+    image: "{{ tower_postgres_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports:
+      - "{{ tower_postgres_port }}:5432"
+    env:
+      POSTGRES_DB: "{{ tower_postgres_db }}"
+      POSTGRES_USER: "{{ tower_postgres_user }}"
+      POSTGRES_PASSWORD: "{{ tower_postgres_password }}"
+    volumes:
+      # Postgres 18+ stores data in a versioned subdir; mount the parent
+      # (/var/lib/postgresql), not /var/lib/postgresql/data.
+      - "{{ tower_postgres_data_dir }}:/var/lib/postgresql"

@@ -28,17 +28,22 @@ Priority for now is a **PoC on what already exists**; durability comes later.
 ## Target architecture (implemented)
 
 ```
-tower 192.168.30.200  (storage appliance)
+tower 192.168.30.200  (storage appliance + stateful services, ADR-0002)
  ├─ NFS export  :2049   /mnt/raid1/k8s-nfs       -> StorageClass tower-nfs (RWX)
  ├─ iSCSI LIO   :3260   fileio LUNs  /mnt/raid1/k8s-iscsi/*.img  (configfs)
- └─ Garage S3   :3900   data_dir /mnt/raid1/garage (Docker, host-local)
-        │   VLAN120 <-> 192.168.30.0/24, router forwards 2049/3260/3900
+ ├─ Garage S3   :3900   data_dir /mnt/raid1/garage   (Docker)
+ └─ Postgres    :5432   data_dir /mnt/raid1/postgres (Docker)
+        │   VLAN120 <-> 192.168.30.0/24, router forwards 2049/3260/3900/5432
         ▼
 k8s (k8s-node-1..4, VMs on proxmox)
  ├─ StorageClass tower-nfs         (RWX, dynamic — csi-driver-nfs)
- ├─ StorageClass tower-iscsi-static (RWO block, static PVs: vault, postgres, …)
- └─ apps speak S3 to tower:3900 directly (no PV/PVC) — e.g. OpenCloud blobs
+ ├─ StorageClass tower-iscsi-static (RWO block, static PVs: vault, opencloud)
+ └─ apps speak S3/SQL to tower directly (no PV/PVC) — e.g. OpenCloud blobs, Keycloak DB
 ```
+
+See [`garage.md`](garage.md) (S3), [`postgres.md`](postgres.md) (SQL),
+[`static-iscsi.md`](static-iscsi.md) (block) and
+[`../adr/0002-stateful-services-on-tower.md`](../adr/0002-stateful-services-on-tower.md).
 
 ## Phases
 

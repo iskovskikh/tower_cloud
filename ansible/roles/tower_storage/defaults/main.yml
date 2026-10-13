@@ -28,15 +28,16 @@ tower_iscsi_iqn: "iqn.2026-10.lan.tower:k8s"
 tower_iscsi_portal_ip: "0.0.0.0"
 tower_iscsi_portal_port: 3260
 tower_iscsi_volumes:
-  - { name: vol1,   size: 10G }   # lun 0
-  - { name: vault,  size: 10G }   # lun 1
-  # lun 2 (garage) is RETIRED: S3 now runs on tower itself (see tower_garage_*),
-  # not on a LUN. Keep the entry so the following LUN indices do not shift —
-  # removing it would renumber postgres/jellyfin/opencloud and break their PVs.
-  - { name: garage, size: 50G }   # lun 2 (unused — reclaim requires renumbering)
-  - { name: postgres, size: 20G } # lun 3 (Keycloak / identity DB)
-  - { name: jellyfin, size: 20G } # lun 4 (Jellyfin /config: metadata + SQLite)
-  - { name: opencloud, size: 500G, sparse: true } # lun 5 (OpenCloud data: POSIX xattrs + embedded LDAP; sparse → floats up to 500G)
+  # The LUN number is explicit (`lun:`), NOT the list position, so retiring a
+  # volume never shifts the others' indices and breaks their PVs.
+  - { name: vault,     size: 10G,  lun: 1 }  # Vault Raft data
+  - { name: jellyfin,  size: 20G,  lun: 4 }  # Jellyfin /config (metadata + SQLite)
+  - { name: opencloud, size: 500G, lun: 5, sparse: true } # OpenCloud metadata (POSIX xattrs + embedded IDM); sparse → floats up to 500G
+# Retired volumes (already removed here; their LUNs/files are pruned manually —
+# see docs/storage/static-iscsi.md):
+#   vol1   (lun 0, 10G)  — Phase-0 smoke test, unused
+#   garage (lun 2, 50G)  — S3 moved to tower (Garage), see docs/storage/garage.md
+#   postgres (lun 3, 20G) — moved to a Postgres container on tower (see below)
 # Explicit initiator IQNs. Empty => dynamic ACLs (any initiator may attach) —
 # fine for the PoC, tighten before production.
 tower_iscsi_initiators: []
@@ -64,3 +65,16 @@ tower_garage_public_addr: "{{ ansible_default_ipv4.address | default('127.0.0.1'
 # the values already held in Vault at secret/garage.
 tower_garage_rpc_secret: "{{ lookup('env', 'GARAGE_RPC_SECRET') | default('', true) }}"
 tower_garage_admin_token: "{{ lookup('env', 'GARAGE_ADMIN_TOKEN') | default('', true) }}"
+
+# --- Postgres: shared database for cluster apps (hosted on tower) ---------
+# Like Garage, the database runs on the storage host rather than on a k8s LUN:
+# apps connect over the network. Keycloak's realm/users live here. The password
+# comes from the environment (matching Vault secret/keycloak db_password) —
+# never committed. See docs/storage/postgres.md.
+tower_postgres_enabled: true
+tower_postgres_data_dir: /mnt/raid1/postgres
+tower_postgres_image: "postgres:18.6"
+tower_postgres_port: 5432
+tower_postgres_db: keycloak
+tower_postgres_user: keycloak
+tower_postgres_password: "{{ lookup('env', 'POSTGRES_PASSWORD') | default('', true) }}"

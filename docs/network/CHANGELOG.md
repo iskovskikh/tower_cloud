@@ -4,6 +4,31 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Postgres moved off k8s LUN onto tower; LUN indices made explicit
+
+Executed from `archasus` (Ansible + Flux/kubectl).
+
+- **Decision (ADR-0002).** Stateful services live on **tower**; k8s runs
+  applications. Block LUNs are limited to what a pod genuinely needs as local
+  block — **Vault** (Raft) and **OpenCloud** metadata (POSIX xattrs). A single
+  **Postgres** container on tower now serves the cluster's apps over the network.
+- **Ansible — `tower_storage` role.** New `tasks/postgres.yml` (Docker,
+  `postgres:18.6`, `data_dir=/mnt/raid1/postgres`, `:5432`, password from env,
+  matching Vault `secret/keycloak` → `db_password`).
+- **Explicit LUN numbers.** `tower_iscsi_volumes` now carries an explicit `lun:`
+  per volume instead of relying on list position, so retiring a volume no longer
+  renumbers the others. Bring-up script template updated accordingly.
+- **Retired LUNs:** `vol1` (lun 0, PoC), `garage` (lun 2, S3 → tower), and
+  `postgres` (lun 3, → tower). Vault stays on lun 1, Jellyfin on lun 4, OpenCloud
+  on lun 5 — indices unchanged, their PVs unaffected. Backing files pruned on
+  tower.
+- **Router.** Storage ports now `2049 3260 3900 5432` (`vlan120` → `srv`).
+- **k8s.** Removed `k8s/apps/db/postgres/` (StatefulSet + LUN-backed PV);
+  Keycloak `KC_DB_URL` → `jdbc:postgresql://192.168.30.200:5432/keycloak`.
+  Realm/users migrated with `pg_dump`/`pg_restore`.
+- **Docs.** New `docs/storage/postgres.md`, `docs/adr/0002-…`; updated
+  `static-iscsi.md` (explicit LUN + retire procedure) and `plan.md`.
+
 ## 2026-10-13 — S3: Garage moved off the k8s block LUN onto tower
 
 Executed from `archasus` (Ansible + Flux/kubectl).

@@ -60,7 +60,7 @@ set_attr "$ATTR/cache_dynamic_acls" 1
 
 # LUNs
 {% for vol in tower_iscsi_volumes %}
-LUNDIR="$TGT/iscsi/$IQN/tpgt_1/lun/lun_{{ loop.index0 }}"
+LUNDIR="$TGT/iscsi/$IQN/tpgt_1/lun/lun_{{ vol.lun }}"
 ensure_dir "$LUNDIR"
 [ -e "$LUNDIR/{{ vol.name }}" ] || { ln -s "$TGT/core/fileio_0/{{ vol.name }}" "$LUNDIR/{{ vol.name }}"; changed=1; }
 {% endfor %}

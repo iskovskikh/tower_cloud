@@ -96,16 +96,18 @@ hosts:
       Historically was 192.168.1.200 before the move to the .30 subnet.
       Since 2026-10-13 also the cluster storage appliance (СХД): NFSv4 export
       /mnt/raid1/k8s-nfs (RWX), an iSCSI LIO target iqn.2026-10.lan.tower:k8s
-      (RWO, fileio LUN on /mnt/raid1/k8s-iscsi), and **Garage S3** (:3900, a
-      Docker container with data_dir /mnt/raid1/garage — no iSCSI LUN). Configured
-      by the Ansible role tower_storage; see docs/storage/plan.md and
-      docs/storage/garage.md.
+      (RWO, fileio LUN on /mnt/raid1/k8s-iscsi), **Garage S3** (:3900, a Docker
+      container with data_dir /mnt/raid1/garage — no iSCSI LUN), and **Postgres**
+      (:5432, Docker, data_dir /mnt/raid1/postgres — serves the cluster's apps,
+      e.g. Keycloak). Stateful services run here, k8s runs apps (ADR-0002).
+      Configured by the Ansible role tower_storage; see docs/storage/.
     services:
       - {port: 22, proto: tcp, service: ssh}
       - {port: 80, proto: tcp, service: "nginx 1.30.5 (webserver; Jellyfin proxy site disabled)"}
       - {port: 2049, proto: tcp, service: "NFSv4 server — exports /mnt/raid1/k8s-nfs (RWX) and /mnt/raid1/share/downloads (media library) -> k8s"}
       - {port: 3260, proto: tcp, service: "iSCSI LIO target iqn.2026-10.lan.tower:k8s (configfs)"}
       - {port: 3900, proto: tcp, service: "Garage S3 API (object storage; Docker, host network)"}
+      - {port: 5432, proto: tcp, service: "Postgres 18.6 (cluster apps — Keycloak; Docker)"}
     disabled_services:
       - "MiniDLNA (8200) — stopped + disabled 2026-10-13"
       - "Jellyfin (8096) — Docker container stopped 2026-10-13; migrated to k8s (ns media, jellyfin.k8s.lan)"
@@ -202,7 +204,8 @@ kubernetes:
     10.10.120.101-104 served by the router; e.g. Vault UI at
     `https://vault.k8s.lan`.
     **SSO (2026-10-13):** Keycloak 26.8.1 (`https://keycloak.k8s.lan`, ns
-    `keycloak`) on Postgres 18.6 (ns `keycloak`, tower iSCSI LUN `postgres`);
+    `keycloak`) on Postgres 18.6 running **on tower** (`:5432`, no k8s LUN — see
+    ADR-0002);
     realm `tower` with clients `vault` + `oauth2-proxy`; oauth2-proxy 7.15.5
     (`https://auth.k8s.lan`, ns `oauth2-proxy`) for forward-auth. Vault logs in
     via Keycloak OIDC. Secrets in Vault `secret/keycloak` -> ESO. See

@@ -13,3 +13,7 @@
 - name: Garage object storage
   ansible.builtin.import_tasks: garage.yml
   when: tower_garage_enabled | bool
+
+- name: Postgres database
+  ansible.builtin.import_tasks: postgres.yml
+  when: tower_postgres_enabled | bool

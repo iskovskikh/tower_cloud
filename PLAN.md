@@ -3,8 +3,9 @@
 Living execution plan. Legend: `[x]` done · `[~]` in progress · `[ ]` todo ·
 `[!]` blocked · `[?]` needs decision. Update this file as work proceeds.
 
-**Goal:** all services run in Kubernetes; all persistent data lives on `tower`;
-the whole stack is Infrastructure as Code (see `docs/adr/0001-infrastructure-as-code.md`).
+**Goal:** applications run in Kubernetes; stateful services (Garage, Postgres)
+and all persistent data live on `tower` (ADR-0002); the whole stack is
+Infrastructure as Code (see `docs/adr/0001-infrastructure-as-code.md`).
 
 _Updated: 2026-10-13_
 
@@ -21,7 +22,7 @@ _Updated: 2026-10-13_
 
 ## Phase 1 — tower storage (СХД)
 
-- [x] firewall/routing VLAN 120 ↔ `192.168.30.0/24` (ports 2049, 3260, 3900)
+- [x] firewall/routing VLAN 120 ↔ `192.168.30.0/24` (ports 2049, 3260, 3900, 5432)
       — OpenWrt zone forwarding `vlan120`→`srv` + port rule (role `router_openwrt`)
 - [x] NFS export (RWX) — `/mnt/raid1/k8s-nfs` to `10.10.120.0/24` + `192.168.30.0/24`
 - [x] iSCSI LIO target (RWO block) — fileio LUN on `/mnt/raid1/k8s-iscsi`,
@@ -113,8 +114,10 @@ _Updated: 2026-10-13_
       browser UI behind SSO, HTTP API + `/socket` left open for native clients.
       **No GPU on the nodes → software transcoding only** — GPU passthrough is a
       follow-up.
-- [x] **databases** — Postgres 18.6 on a tower iSCSI block LUN (`postgres`, 20 Gi),
-      RWO static PV (`tower-iscsi-postgres`), ns `keycloak`; serves Keycloak
+- [x] **databases** — **Postgres 18.6 now runs on tower** (`:5432`, Docker,
+      `/mnt/raid1/postgres`) and serves the cluster's apps over the network; the
+      k8s StatefulSet + LUN-backed PV were retired (ADR-0002). Keycloak connects
+      to `192.168.30.200:5432`.
 - [x] **SSO / identity — Keycloak 26.8.1** (ns `keycloak`): Postgres backend,
       hostname `keycloak.k8s.lan`, bootstrap realm `tower` (clients `vault` +
       `oauth2-proxy`). `oauth2-proxy` (ns `oauth2-proxy`, `auth.k8s.lan`) gives
@@ -142,6 +145,14 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Postgres moved to tower; LUNs trimmed (ADR-0002).** Keycloak's
+  database now runs as a Docker Postgres on tower (`data_dir=/mnt/raid1/postgres`,
+  `:5432`), reached over the network; the k8s StatefulSet + `tower-iscsi-postgres`
+  LUN were retired. `tower_iscsi_volumes` switched to **explicit `lun:`** numbers
+  (no more positional indices), letting `vol1` (lun 0) and `garage` (lun 2) be
+  dropped alongside `postgres` (lun 3) without touching Vault (1), Jellyfin (4)
+  or OpenCloud (5). Router opens 5432. Docs: `docs/storage/postgres.md`,
+  `docs/adr/0002-stateful-services-on-tower.md`.
 - 2026-10-13 — **S3 moved off the block LUN: Garage now runs on tower.**
   Object storage needs no block device, so Garage was relocated from a k8s pod
   on a 50 GiB tower LUN (lun 2) to a Docker container on tower itself
