@@ -22,6 +22,8 @@ tower_iscsi_portal_port: 3260
 tower_iscsi_volumes:
   - name: vol1
     size: 10G
+  - name: vault
+    size: 10G
 # Explicit initiator IQNs. Empty => dynamic ACLs (any initiator may attach) —
 # fine for the PoC, tighten before production.
 tower_iscsi_initiators: []

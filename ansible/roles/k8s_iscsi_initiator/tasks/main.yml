@@ -36,3 +36,9 @@
       fi
   register: tower_iscsi_login
   changed_when: "'CHANGED' in tower_iscsi_login.stdout"
+
+- name: initiator | rescan sessions to pick up new LUNs
+  ansible.builtin.command:
+    cmd: iscsiadm -m session --rescan
+  changed_when: false
+
