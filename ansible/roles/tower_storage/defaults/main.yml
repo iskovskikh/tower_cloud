@@ -31,13 +31,13 @@ tower_iscsi_volumes:
   # The LUN number is explicit (`lun:`), NOT the list position, so retiring a
   # volume never shifts the others' indices and breaks their PVs.
   - { name: vault,     size: 10G,  lun: 1 }  # Vault Raft data
-  - { name: jellyfin,  size: 20G,  lun: 4 }  # Jellyfin /config (metadata + SQLite)
   - { name: opencloud, size: 500G, lun: 5, sparse: true } # OpenCloud metadata (POSIX xattrs + embedded IDM); sparse → floats up to 500G
 # Retired volumes (already removed here; their LUNs/files are pruned manually —
 # see docs/storage/static-iscsi.md):
 #   vol1   (lun 0, 10G)  — Phase-0 smoke test, unused
 #   garage (lun 2, 50G)  — S3 moved to tower (Garage), see docs/storage/garage.md
 #   postgres (lun 3, 20G) — moved to a Postgres container on tower (see below)
+#   jellyfin (lun 4, 20G) — /config moved to a node-local PVC (tower-local)
 # Explicit initiator IQNs. Empty => dynamic ACLs (any initiator may attach) —
 # fine for the PoC, tighten before production.
 tower_iscsi_initiators: []

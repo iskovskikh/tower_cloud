@@ -110,7 +110,8 @@ _Updated: 2026-10-13_
 - [x] media stack — **Transmission** (ns `media`, `transmission.k8s.lan`, LSIO
       4.1.3) and **Jellyfin 10.11.6** (ns `media`, `jellyfin.k8s.lan`) both in
       k8s, sharing tower's `/mnt/raid1/share/downloads` over NFS (RWX). Jellyfin
-      `/config` on a dedicated tower iSCSI LUN (lun 4, `tower-iscsi-jellyfin`);
+      `/config` on a **node-local dynamic PVC** (`tower-local`, local-path-
+      provisioner — SQLite is unsafe on NFS);
       browser UI behind SSO, HTTP API + `/socket` left open for native clients.
       **No GPU on the nodes → software transcoding only** — GPU passthrough is a
       follow-up.
@@ -145,6 +146,12 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Jellyfin /config → node-local PVC.** Added Rancher
+  **local-path-provisioner v0.0.30** + StorageClass `tower-local` (Flux), and
+  moved Jellyfin's `/config` (SQLite; unsafe on NFS) off the block LUN 4 onto a
+  dynamic `tower-local` PVC. Trade-off: node-local, off the tower array, not
+  backed up (`docs/storage/local-path.md`). Retired LUN 4; only Vault (1) and
+  OpenCloud (5) LUNs remain.
 - 2026-10-13 — **Postgres moved to tower; LUNs trimmed (ADR-0002).** Keycloak's
   database now runs as a Docker Postgres on tower (`data_dir=/mnt/raid1/postgres`,
   `:5432`), reached over the network; the k8s StatefulSet + `tower-iscsi-postgres`

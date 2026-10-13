@@ -1,24 +1,8 @@
 # Jellyfin state (/config: library SQLite DBs, metadata, plugins, user data).
-# SQLite needs real POSIX locking and a single writer, so this lives on a
-# dedicated tower iSCSI LUN (backstore "jellyfin" = lun 4, 20 GiB) as an RWO
-# static PV — the same pattern as Postgres/Vault/Garage.
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: tower-iscsi-jellyfin
-spec:
-  capacity:
-    storage: 20Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: tower-iscsi-static
-  iscsi:
-    targetPortal: 192.168.30.200:3260
-    iqn: iqn.2026-10.lan.tower:k8s
-    lun: 4
-    fsType: ext4
----
+# SQLite needs real POSIX locking and a single writer, and is unsafe on NFS, so
+# this is a dynamic local-path volume (StorageClass tower-local) on the node
+# Jellyfin runs on. NOTE: node-local, off the tower array, not backed up — see
+# docs/storage/local-path.md.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -27,11 +11,10 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: tower-iscsi-static
-  volumeName: tower-iscsi-jellyfin
+  storageClassName: tower-local
   resources:
     requests:
-      storage: 20Gi
+      storage: 5Gi
 ---
 # Media library: the same tower export Transmission writes to
 # (/mnt/raid1/share/downloads), mounted RWX at /media. A PV binds to exactly one

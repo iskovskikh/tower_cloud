@@ -38,11 +38,13 @@ tower 192.168.30.200  (storage appliance + stateful services, ADR-0002)
 k8s (k8s-node-1..4, VMs on proxmox)
  ├─ StorageClass tower-nfs         (RWX, dynamic — csi-driver-nfs)
  ├─ StorageClass tower-iscsi-static (RWO block, static PVs: vault, opencloud)
+ ├─ StorageClass tower-local       (RWO, node-local — local-path, e.g. Jellyfin /config)
  └─ apps speak S3/SQL to tower directly (no PV/PVC) — e.g. OpenCloud blobs, Keycloak DB
 ```
 
 See [`garage.md`](garage.md) (S3), [`postgres.md`](postgres.md) (SQL),
-[`static-iscsi.md`](static-iscsi.md) (block) and
+[`static-iscsi.md`](static-iscsi.md) (block), [`local-path.md`](local-path.md)
+(node-local) and
 [`../adr/0002-stateful-services-on-tower.md`](../adr/0002-stateful-services-on-tower.md).
 
 ## Phases

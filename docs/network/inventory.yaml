@@ -197,7 +197,8 @@ kubernetes:
     Originally built Oct 2023 (kubeadm v1.28.3) and dead since ~2025-08 (expired
     kubelet certs). **Rebuilt 2026-10-13 via IaC** (Ansible role `k8s_install`):
     containerd 2.4.1, kubeadm v1.37.1, Calico v3.33 operator; 4/4 nodes Ready.
-    kubeconfig on archasus. StorageClasses `tower-nfs`/`tower-iscsi-static`;
+    kubeconfig on archasus. StorageClasses `tower-nfs` (RWX), `tower-iscsi-static`
+    (RWO block), `tower-local` (RWO node-local);
     ingress-nginx (hostNetwork DaemonSet on **all** nodes, incl. control-plane
     via toleration); cert-manager; Garage S3 (runs on **tower**, :3900 — see the
     tower entry). DNS wildcard `*.k8s.lan` ->
@@ -215,8 +216,9 @@ kubernetes:
     `/mnt/raid1/share/downloads` over NFS (RWX), shared with Jellyfin. Whole
     host behind Keycloak SSO; Transmission RPC auth disabled (single login).
     **Jellyfin 10.11.6** also in ns `media` (`https://jellyfin.k8s.lan`):
-    `/config` on a dedicated tower iSCSI LUN (RWO static PV `tower-iscsi-jellyfin`,
-    lun 4), same NFS export mounted at `/media`. Browser UI (`/web`) behind
+    `/config` on a **dynamic node-local PVC** (`tower-local` = local-path-
+    provisioner; SQLite is unsafe on NFS, so not on tower), same NFS export
+    mounted at `/media`. The old lun-4 block LUN was retired. Browser UI (`/web`) behind
     Keycloak SSO; the HTTP API and `/socket` are left open for native clients
     (Android TV, iOS, Kodi). Nodes have no `/dev/dri` → software transcoding only.
     **OpenCloud (2026-10-13):** self-hosted file sync/share/collab

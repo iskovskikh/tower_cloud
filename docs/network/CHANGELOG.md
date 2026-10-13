@@ -4,6 +4,26 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Jellyfin /config on a node-local PVC (`tower-local`)
+
+Executed from `archasus` (Ansible + Flux/kubectl).
+
+- **New StorageClass `tower-local`.** Added Rancher
+  **local-path-provisioner v0.0.30** via Flux (`k8s/apps/storage/local-path/`):
+  dynamic RWO volumes on the node's local disk (`/opt/local-path-provisioner`),
+  `WaitForFirstConsumer`, `Retain`.
+- **Jellyfin `/config` moved off the block LUN.** Its SQLite DBs are unsafe on
+  NFS, so the dedicated iSCSI LUN (lun 4) was replaced with a dynamic
+  `tower-local` PVC (5 Gi; used ~160 MiB). Removed the static PV
+  `tower-iscsi-jellyfin`; `jellyfin-config` is now a plain dynamic PVC.
+- **Trade-off (accepted):** `/config` is now **node-local** — tied to the node
+  Jellyfin runs on, off the `/mnt/raid1` array, not covered by tower backups.
+  See `docs/storage/local-path.md`.
+- **Retired LUN 4** (`jellyfin`, 20 Gi) on tower; backing file pruned. Only
+  **vault (lun 1)** and **opencloud (lun 5)** LUNs remain.
+- **Data migrated** by tarring `/config` out of the running pod and restoring it
+  into the new PVC.
+
 ## 2026-10-13 — Postgres moved off k8s LUN onto tower; LUN indices made explicit
 
 Executed from `archasus` (Ansible + Flux/kubectl).
