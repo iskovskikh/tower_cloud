@@ -21,6 +21,10 @@
       if [ "$cur" != "$3" ]; then uci set firewall.$1.$2="$3"; changed=1; fi
     }
 
+    {% for sec in router_openwrt_remove_sections %}
+    if uci -q get firewall.{{ sec }} >/dev/null 2>&1; then uci -q delete firewall.{{ sec }}; changed=1; fi
+    {% endfor %}
+
     {% for f in router_openwrt_forwardings %}
     ensure_type {{ f.name }} forwarding
     set_opt {{ f.name }} src {{ f.src }}

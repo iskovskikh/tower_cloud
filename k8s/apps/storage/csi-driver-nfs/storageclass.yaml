@@ -8,6 +8,10 @@ parameters:
   server: 192.168.30.200
   share: /mnt/raid1/k8s-nfs
   mountPermissions: "0777"
+# 4.2 needs a large contiguous allocation that fails on the 4 GB nodes
+# (order-5 page allocation failure); 4.1 mounts fine.
+mountOptions:
+  - vers=4.1
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
 allowVolumeExpansion: true

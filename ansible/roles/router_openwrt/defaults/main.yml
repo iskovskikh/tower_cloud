@@ -9,11 +9,14 @@
 #
 # See docs/storage/plan.md (storage ports 2049/3260/9000).
 
-# zone -> zone forwarding pairs to permit
-router_openwrt_forwardings:
-  - name: k8s_v120_to_srv
-    src: vlan120
-    dest: srv
+# No broad zone-pair forwarding: only the ports in router_openwrt_rules are
+# allowed through, so the zones keep their default REJECT for everything else.
+router_openwrt_forwardings: []
+
+# Previously-added sections to delete if present (we used to allow the whole
+# vlan120 -> srv zone pair, which opened every port).
+router_openwrt_remove_sections:
+  - k8s_v120_to_srv
 
 # Ports opened through the router. Return traffic is stateful (conntrack).
 router_openwrt_rules:
