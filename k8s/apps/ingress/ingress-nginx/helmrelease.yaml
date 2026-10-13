@@ -34,6 +34,13 @@ spec:
       reportNodeInternalIp: true
       ingressClassResource:
         default: true
+      # oauth2-proxy's Set-Cookie (session + id_token) exceeds the default 4k
+      # response header buffer, which makes nginx fail the OIDC /oauth2/callback
+      # with "upstream sent too big header" (502). Enlarge the proxy buffers.
+      config:
+        proxy-buffer-size: "16k"
+        proxy-buffers-number: "8"
+        proxy-busy-buffers-size: "32k"
       # Also run on the control-plane node: every node becomes an ingress entry
       # point, so the wildcard DNS *.k8s.lan can resolve to all four node IPs.
       tolerations:
