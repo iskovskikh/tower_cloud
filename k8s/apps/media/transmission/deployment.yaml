@@ -72,8 +72,7 @@ spec:
             - name: downloads
               mountPath: /downloads
           readinessProbe:
-            httpGet:
-              path: /transmission/web/
+            tcpSocket:
               port: rpc
             initialDelaySeconds: 10
             periodSeconds: 10
