@@ -4,6 +4,31 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Dynamic RWX storage (csi-driver-nfs) + firewall fix
+
+Executed from `archasus` (Flux).
+
+- Deployed **csi-driver-nfs v4.13.5** via Flux (HelmRepository from the project's
+  raw charts URL + HelmRelease in `kube-system`). Controller `5/5`, a
+  `csi-nfs-node` DaemonSet on all 4 nodes.
+- Added StorageClass **`tower-nfs`** (RWX, `nfs.csi.k8s.io`, server
+  `192.168.30.200`, share `/mnt/raid1/k8s-nfs`). A test PVC + pod wrote/read
+  `hello-nfs`; the driver created `pvc-<uid>/` on tower under the export. Test
+  objects removed afterwards.
+- Renamed role `k8s_iscsi_initiator` → **`k8s_storage_client`** and it now also
+  installs **`nfs-common`** (needed for the node-side NFS mounts).
+- **Fix 1 — NFS version:** default NFSv4.2 failed with `page allocation
+  failure: order:5` on the 4 GB nodes (`mount.nfs: Cannot allocate memory`).
+  Pinned `vers=4.1`, which mounts fine.
+- **Fix 2 — firewall scope:** the OpenWrt zone-pair *forwarding* we added earlier
+  actually allowed **all** ports vlan120→srv (111/20048 were reachable). Replaced
+  it with port-scoped rules, so only **2049/3260/9000** pass; verified 111/20048
+  are now closed and 2049/3260 still open.
+
+Sources: `kubectl`, `flux`, `csi` logs, `mount`/`dmesg`, `uci` on the router.
+
+---
+
 ## 2026-10-13 — Vault auto-unseal + iSCSI multi-initiator incident
 
 - Added an **auto-unseal sidecar** to the Vault StatefulSet, reading unseal keys

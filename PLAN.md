@@ -30,7 +30,7 @@ _Updated: 2026-10-13_
 - [ ] MinIO (S3) — deferred to Phase 3 (needs a secret source; `tower_minio_enabled=false`)
 - [x] `ansible` role `tower_storage` implemented + idempotent
 - [x] validated from a test pod — `open-iscsi` initiator on all nodes (role
-      `k8s_iscsi_initiator`, playbook `k8s-storage.yml`); static `iscsi` PV/PVC +
+      `k8s_storage_client`, playbook `k8s-storage.yml`); static `iscsi` PV/PVC +
       busybox pod (`k8s/apps/storage/iscsi-test-*.yaml`) wrote and read back
       `hello-from-pod`. Latency: ~0.8 ms/4 KiB fsync; 256 MiB write ≈ 624 MB/s
       (cached) / ~14 MB/s durable (HDD + router path — a bottleneck to revisit)
@@ -74,7 +74,11 @@ _Updated: 2026-10-13_
 
 ## Phase 4 — workloads
 
-- [ ] StorageClasses `tower-nfs` / `tower-iscsi` / `tower-s3`
+- [x] StorageClass `tower-nfs` (RWX) via **csi-driver-nfs v4.13.5** (Flux);
+      dynamic PVC validated (pod wrote/read `hello-nfs`; subdir created on tower).
+      Pinned `vers=4.1` (4.2 OOMs the 4 GB nodes). Role `k8s_storage_client` also
+      installs `nfs-common` on the nodes.
+- [ ] StorageClasses `tower-iscsi` (RWO block, needs a CSI driver) / `tower-s3`
 - [ ] ingress controller
 - [ ] media stack (Jellyfin, Transmission) consumed from tower
 - [ ] databases (Postgres) on RWO block
@@ -87,12 +91,21 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Dynamic RWX storage live (Phase 4 start).** Deployed
+  **csi-driver-nfs v4.13.5** via Flux (Helm) + StorageClass **`tower-nfs`**
+  (provisioner `nfs.csi.k8s.io`, server tower, share `/mnt/raid1/k8s-nfs`).
+  `k8s_storage_client` (renamed from `k8s_iscsi_initiator`) now also installs
+  `nfs-common`. Test PVC/pod verified end-to-end. Fixes along the way: the NFS
+  export needed `nfs-common` on nodes; NFSv4.2 fails with an order-5 page
+  allocation failure on the 4 GB nodes → pinned `vers=4.1`; the earlier
+  zone-pair forwarding had silently allowed **all** ports vlan120→srv → replaced
+  with port-scoped rules (only 2049/3260/9000).
 - 2026-10-13 — **Vault auto-unseal + iSCSI incident.** Adding the auto-unseal
   sidecar rescheduled the Vault pod; `k8s-node-3` held a stale empty view of the
   LUN (from the initiator role's pre-login) and its kubelet reformatted the
   volume, wiping the first Vault init (demo data only). Recovered by re-init +
   reconfiguring Vault. Root cause fixed by removing pre-login from
-  `k8s_iscsi_initiator` (kubelet manages login/logout). Auto-unseal sidecar using
+  `k8s_storage_client` (kubelet manages login/logout). Auto-unseal sidecar using
   the `vault-unseal` Secret verified (seal → unsealed ~25 s). ESO store + demo
   ExternalSecret healthy again.
 - 2026-10-13 — **Secrets chain live (Phase 3): Vault → ESO → Secret.**
@@ -114,7 +127,7 @@ _Updated: 2026-10-13_
   `flux-system` healthy; the root Kustomization reconciles `k8s/` — the static
   iSCSI smoke test is now GitOps-managed. Next: Vault+ESO (backend/auto-unseal TBD).
 - 2026-10-13 — **Phase 1 validated end to end.** `open-iscsi` initiator on all 4
-  nodes (role `k8s_iscsi_initiator`, separate playbook `k8s-storage.yml` — not in
+  nodes (role `k8s_storage_client`, separate playbook `k8s-storage.yml` — not in
   `site.yml`, which still pulls the non-idempotent `k8s_install`). Static iSCSI
   PV/PVC + busybox pod on `k8s-node-2` wrote/read `hello-from-pod`. Perf: 256 MiB
   write 624 MB/s cached / ~14 MB/s durable via the router. Live test objects
