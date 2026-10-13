@@ -67,10 +67,12 @@ _Updated: 2026-10-13_
       Verified: `vault operator seal` → auto-unsealed within ~25 s
 - [x] **External Secrets Operator v2.12.0** via Flux (Helm, namespace
       `external-secrets`); Vault kubernetes-auth role `eso`; `ClusterSecretStore`
-      `vault` validated; first `ExternalSecret` synced (`secret/demo` →
-      Secret `default/vault-demo`)
-- [ ] Vault auth/policy/role provisioning is **imperative** (one-off `vault`
-      commands, not in Git) — codify later (e.g. Vault provider / bank-vaults)
+      `vault` validated (demo `ExternalSecret` verified, then removed — no secret
+      values in the repo)
+- [x] Vault config **codified** in Ansible role `vault_config`
+      (`playbooks/vault.yml`): KV-v2 mount, kubernetes auth + config, ESO policy
+      `eso-read`, role `eso`. Idempotent, runs the CLI in the pod via
+      `kubectl exec`. Admin token from `$VAULT_TOKEN` or the off-repo init file.
 
 ## Phase 4 — workloads
 
@@ -95,6 +97,12 @@ _Updated: 2026-10-13_
 
 ## Done log
 
+- 2026-10-13 — **Vault config codified (Phase 3 tail).** New Ansible role
+  `vault_config` (`playbooks/vault.yml`) reconciles KV-v2 (`secret/`), the
+  kubernetes auth method + config, policy `eso-read` and role `eso`, idempotently
+  via `kubectl exec` into the Vault pod (no external API exposure). Verified
+  idempotent (run twice: no changes). The demo `ExternalSecret`/Vault secret were
+  removed so no secret values live in the repo.
 - 2026-10-13 — **Ingress live.** Deployed **ingress-nginx v1.15.1** via Flux
   (Helm) as a `hostNetwork` DaemonSet (no MetalLB/cloud LB) — every node's `:80`
   (`:443`) is an entry point; the class `nginx` is default. Verified end to end:

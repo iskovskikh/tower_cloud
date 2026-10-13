@@ -4,6 +4,25 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-13 — Vault config codified (Ansible), demo ExternalSecret removed
+
+Executed from `archasus`.
+
+- Added Ansible role **`vault_config`** + playbook **`playbooks/vault.yml`** that
+  reconciles the Vault bootstrap config idempotently: KV-v2 mount `secret/`, the
+  `kubernetes` auth method + its config, policy `eso-read` and role `eso`.
+  It runs the `vault` CLI **inside the Vault pod via `kubectl exec`**, so the
+  Vault API is not exposed outside the cluster; the admin token comes from
+  `$VAULT_TOKEN` or the off-repo `~/.config/tower-cloud/vault-init.json`.
+  Verified idempotent (two runs, no changes).
+- Removed the demo `ExternalSecret` (`k8s/apps/secrets/external-secrets/`) and the
+  backing `secret/demo` from Vault, so no secret *values* live in the repo. ESO +
+  `ClusterSecretStore` remain ready for real workloads.
+
+Sources: `ansible-playbook`, `kubectl`. No secret values recorded.
+
+---
+
 ## 2026-10-13 — ingress-nginx (hostNetwork DaemonSet) via Flux
 
 Executed from `archasus` (Flux).
