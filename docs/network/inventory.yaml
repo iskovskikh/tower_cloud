@@ -30,7 +30,7 @@ domains:
     records:
       # All set by hand in the panel; added 2026-10-15, verified with dig @1.1.1.1.
       - {name: cloud, type: A, value: 78.17.99.16, role: OpenCloud, status: present}
-      - {name: auth,  type: A, value: 78.17.99.16, role: Keycloak, status: present}
+      - {name: auth,  type: A, value: 78.17.99.16, role: "Keycloak (public); split-horizon internally -> ingress-nginx", status: present}
       - {name: "*",   type: A, value: 78.17.99.16, role: "wildcard (routing only; TLS is per-host)", status: present}
       - {name: "@",   type: A, value: 78.17.99.16, role: "apex — replaced the parking A 92.53.96.201", status: present}
       - {name: www,   type: A, value: 78.17.99.16, role: "www — replaced the parking A 92.53.96.201", status: present}
@@ -88,27 +88,31 @@ hosts:
     status: up
     ips:
       lan: 192.168.1.1
-      servers: 192.168.30.1
     mac: "c0:4a:00:fb:ff:71"
     hardware_oui: "TP-Link Technologies Co.,Ltd"
+    hardware: TP-Link TL-WDR4300 v1
     os: OpenWrt (LuCI)
     os_version: "23.093.42704"
     notes: >
-      OpenWrt on TP-Link hardware. Web UI (LuCI) on :80/:443, dropbear SSH on :22.
-      Routes between 192.168.1.0/24 and 192.168.30.0/24 and does DHCP/DNS for the LAN.
-      IPv6 ULA RA (fde7:823d:5636::/64). Zones: lan, wan, vlan110 (10.10.110.0/24),
-      vlan120 (10.10.120.0/24), iot (192.168.20.0/24), srv (192.168.30.0/24).
-      Firewall forwards vlan120 -> srv on 2049/3260/9000 (added 2026-10-13, role
-      router_openwrt) so the k8s nodes can reach tower's storage.
-      DNS (dnsmasq) serves a wildcard for cluster Ingress names: --address
-      '/k8s.lan/<ip>' for all four node IPs (role router_openwrt, 2026-10-13) —
-      any <name>.k8s.lan resolves to the ingress entry points. It also has
-      static DHCP reservations for the k8s nodes (dhcp.@host[4..7]:
-      10.10.120.101-104) so those IPs are stable.
+      OpenWrt on TP-Link hardware (TL-WDR4300 v1). Web UI (LuCI) on :80/:443,
+      dropbear SSH on :22. Does DHCP/DNS for the LAN.
+      2026-10-15: the server segment (192.168.30.0/24) and the cluster
+      (10.10.120.0/24, VLAN120) are routed **via the Keenetic server router**
+      (192.168.1.216); the stale directly-connected `br-srv`/`eth0.120` L3 (old
+      trunk, link down) was disabled (`proto=none`) and replaced with static
+      routes rt_srv/rt_k8s + a LAN-hairpin rule (role `router_openwrt`). Before
+      this it blackholed the server/cluster subnets and duplicated the Keenetic's
+      192.168.30.1. It no longer holds the VLAN120 DHCP pool.
+      IPv6 ULA RA (fde7:823d:5636::/64). Zones: lan, wan, iot (192.168.20.0/24),
+      vlan110 (10.10.110.0/24). The `srv`/`vlan120` zones are now empty (their
+      interfaces are `proto=none`); the old vlan120->srv storage rule is inert.
+      DNS (dnsmasq) serves the cluster Ingress wildcard: --address '/k8s.lan/<ip>'
+      for all four node IPs (role router_openwrt, 2026-10-13), plus the
+      split-horizon '/auth.metoda.cc/<ip>' (2026-10-15) so the Keycloak issuer
+      resolves to ingress-nginx internally.
       2026-10-14: switch port 3 moved from VLAN30 (Servers) to VLAN1 (LAN) — the
       Keenetic Omni II's WAN now terminates there (DHCP 192.168.1.216) so its
-      WAN subnet does not collide with the server segment. br-srv (VLAN30) is
-      now orphaned (no physical ports).
+      WAN subnet does not collide with the server segment.
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
       - {port: 80, proto: tcp, service: luci-http}
@@ -247,6 +251,12 @@ hosts:
       br-lan; VLAN120 (eth0.120) = 10.10.120.1, the k8s nodes' gateway (keeps
       k8s in its own L2). Port 2 = tower. Firewall rule Allow-Mgmt-WAN
       (tcp 22/80/443 from 192.168.0.0/16) plus wg0/k8s in the lan zone.
+      2026-10-15: **DHCP server for VLAN120** — `dhcp.k8s` pool
+      (10.10.120.100-.249) + static reservations `dhcp.k8s_node1..4` for the four
+      node MACs (.101-.104). The cluster was offline before this: the nodes had
+      no DHCP pool (see CHANGELOG). Also a `wan_to_lan` forwarding rule so the
+      main LAN — which routes the server/cluster subnets to this router — can
+      reach them. SSH key added to `/etc/dropbear/authorized_keys`.
       Configured in place (no Ansible role yet — see open_questions).
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
@@ -305,7 +315,8 @@ kubernetes:
     - {id: k8s-node-3, ip: 10.10.120.103, role: worker, vmid: 103, vcpu: 2, mem_mb: 3072, disk_gb: 22}
     - {id: k8s-node-4, ip: 10.10.120.104, role: worker, vmid: 104, vcpu: 2, mem_mb: 3072, disk_gb: 22}
   notes: >
-    Four Ubuntu 22.04 VMs on proxmox, VLAN 120, DHCP, qemu-guest-agent.
+    Four Ubuntu 22.04 VMs on proxmox, VLAN 120 (DHCP from the Keenetic `dhcp.k8s`,
+    static reservations .101-.104), qemu-guest-agent.
     Originally built Oct 2023 (kubeadm v1.28.3) and dead since ~2025-08 (expired
     kubelet certs). **Rebuilt 2026-10-13 via IaC** (Ansible role `k8s_install`):
     containerd 2.4.1, kubeadm v1.37.1, Calico v3.33 operator; 4/4 nodes Ready.
@@ -316,13 +327,17 @@ kubernetes:
     tower entry). DNS wildcard `*.k8s.lan` ->
     10.10.120.101-104 served by the router; e.g. Vault UI at
     `https://vault.k8s.lan`.
-    **SSO (2026-10-13):** Keycloak 26.8.1 (`https://keycloak.k8s.lan`, ns
-    `keycloak`) on Postgres 18.6 running **on tower** (`:5432`, no k8s LUN — see
+    **SSO (2026-10-13):** Keycloak 26.8.1 (canonical host `https://auth.metoda.cc`,
+    ns `keycloak`) on Postgres 18.6 running **on tower** (`:5432`, no k8s LUN — see
     ADR-0002);
     realm `tower` with clients `vault` + `oauth2-proxy`; oauth2-proxy 7.15.5
     (`https://auth.k8s.lan`, ns `oauth2-proxy`) for forward-auth. Vault logs in
     via Keycloak OIDC. Secrets in Vault `secret/keycloak` -> ESO. See
     `docs/identity/README.md`.
+    **Keycloak issuer (2026-10-15):** `KC_HOSTNAME=https://auth.metoda.cc`;
+    split-horizon DNS added to the router dnsmasq so the issuer resolves to
+    ingress-nginx inside and to adminvps outside (identical issuer); oauth2-proxy
+    and Vault OIDC discovery URL switched to `auth.metoda.cc`.
     **Media (2026-10-13):** Transmission 4.1.3 in ns `media`
     (`https://transmission.k8s.lan`, linuxserver image) writes to tower's
     `/mnt/raid1/share/downloads` over NFS (RWX), shared with Jellyfin. Whole
@@ -346,19 +361,18 @@ kubernetes:
     Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
     balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and
     the control-plane hit OOM (see CHANGELOG).
-    **Network (2026-10-14):** the VLAN120 gateway is now the **Keenetic Omni II**
-    (still 10.10.120.1, eth0.120); proxmox/k8s hang off the Keenetic, whose
-    port 3 to proxmox is a VLAN30+VLAN120 trunk. The main router's port 5 trunk
-    is no longer in use. The cluster is reachable from `adminvps` over the
-    WireGuard tunnel (ingress, nodes, API :6443). Node DHCP reservations may need
-    to move from the main router to the Keenetic ❓.
+    **Network (2026-10-14, updated 2026-10-15):** the VLAN120 gateway/DHCP is the
+    **Keenetic Omni II** (10.10.120.1, eth0.120, `dhcp.k8s`); proxmox/k8s hang off
+    the Keenetic, whose port 3 to proxmox is a VLAN30+VLAN120 trunk. The main
+    router's port 5 trunk is unused; the main router routes the server/cluster
+    subnets via the Keenetic and now reaches them from the LAN directly
+    (archasus → `kubectl`, tower, proxmox). Also reachable from `adminvps` over
+    the WireGuard tunnel (ingress, nodes, API :6443).
 
 open_questions:
   - "metoda.cc: add A records `cloud`/`auth`/`*` -> 78.17.99.16 BY HAND in hosting.timeweb.ru/domains (Timeweb Cloud API cannot see the zone); apex stays on parking."
-  - "Keycloak OIDC on the public host: set KC_HOSTNAME=https://auth.metoda.cc and split-horizon DNS so the issuer resolves the same inside/outside; which services are public vs VPN-only?"
-  - "No Ansible role yet for the Keenetic Omni II (OpenWrt server router) — manage it by IaC, and how?"
-  - "Move the k8s node DHCP reservations off the main router onto the Keenetic (VLAN120)?"
-  - "keycloak / vault are not answering in the cluster — bring them back up (networking is now done)."
+  - "Keycloak OIDC on the public host: KC_HOSTNAME=https://auth.metoda.cc + split-horizon DNS (router dnsmasq) + oauth2-proxy/Vault issuer URLs codified and applied; verify public login end-to-end. Which services are public vs VPN-only?"
+  - "No Ansible role yet for the Keenetic Omni II (OpenWrt server router) — it now carries the VLAN120 DHCP pool, routes, the wan->lan forwarding and split-horizon peering, all configured by hand. Manage it by IaC, and how?"
   - "Why does archasus hold two IPv4 leases (.204 and .205) on one NIC?"
   - "What runs on the biqu* hosts (.161/.202/.203)? 3D printer controllers?"
   - "How should tower's /mnt/raid1 (native mdadm RAID1, no snapshots) and proxmox VMs be backed up?"

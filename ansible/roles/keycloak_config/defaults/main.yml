@@ -5,7 +5,7 @@
 # user is first created (temporary=true => Keycloak forces a change on first
 # login), so a password the user later chooses is never overwritten.
 
-keycloak_url: "https://keycloak.k8s.lan"
+keycloak_url: "https://auth.metoda.cc"
 keycloak_realm: tower
 keycloak_admin_realm: master
 keycloak_admin_client: admin-cli

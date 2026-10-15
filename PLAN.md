@@ -120,7 +120,7 @@ _Updated: 2026-10-15_
       k8s StatefulSet + LUN-backed PV were retired (ADR-0002). Keycloak connects
       to `192.168.30.200:5432`.
 - [x] **SSO / identity — Keycloak 26.8.1** (ns `keycloak`): Postgres backend,
-      hostname `keycloak.k8s.lan`, bootstrap realm `tower` (clients `vault` +
+      issuer `auth.metoda.cc` (split-horizon; was `keycloak.k8s.lan`), realm `tower` (clients `vault` +
       `oauth2-proxy`). `oauth2-proxy` (ns `oauth2-proxy`, `auth.k8s.lan`) gives
       forward-auth SSO to any Ingress via the `auth-url`/`auth-signin`
       annotations (demo: `whoami.k8s.lan`). Vault UI logs in via Keycloak OIDC.
@@ -173,8 +173,9 @@ client and the server-segment router.
 - [~] publish **OpenCloud** (`cloud.`) and **Keycloak** (`auth.`) k8s Ingresses
       with the public hostnames — added to the Ingress manifests 2026-10-15; not
       yet applied (cluster down)
-- [ ] **split-horizon DNS** so the Keycloak issuer hostname resolves the same
-      inside (ingress) and outside (VPS)
+- [~] **split-horizon DNS** for the Keycloak issuer — `KC_HOSTNAME`, the router
+      dnsmasq entry (`auth.metoda.cc` → ingress-nginx node IPs) and the
+      oauth2-proxy/Vault issuer URLs are codified 2026-10-15; not yet applied
 - [ ] bring the cluster's **Keycloak / Vault** back up (currently not answering)
 - [ ] **IaC**: Ansible role/playbook for `adminvps` (WG + Traefik) and for the
       Keenetic Omni II (OpenWrt server router) — both configured by hand 2026-10-14
@@ -183,6 +184,13 @@ client and the server-segment router.
 
 ## Done log
 
+- 2026-10-15 — **Keycloak issuer hostname → `auth.metoda.cc` + split-horizon DNS.**
+  `KC_HOSTNAME=https://auth.metoda.cc` (was `keycloak.k8s.lan`); the router role
+  (`router_openwrt`) dnsmasq now answers `auth.metoda.cc` with the ingress-nginx
+  node IPs so the issuer resolves the same inside (ingress) and outside
+  (`adminvps`); `oauth2-proxy --oidc-issuer-url` and Vault's
+  `vault_oidc_discovery_url` follow. Manifests/roles edited, **not applied**
+  (cluster down). See `docs/identity/README.md`, `CHANGELOG.md`.
 - 2026-10-15 — **Traefik front end on `adminvps` (ADR-0003/0004).** New Ansible
   role `adminvps_traefik` + `playbooks/adminvps.yml`: Docker + Compose v2,
   Traefik v3.7.14 (`network_mode: host`), ACME HTTP-01. Let's Encrypt certs

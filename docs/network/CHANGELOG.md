@@ -4,6 +4,65 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-15 — Cluster outage + recovery (VLAN120 DHCP, Vault LUN, server routing)
+
+- **Symptom:** the whole cluster was unreachable — no `10.10.120.0/24` from
+  `archasus` or `adminvps`, k8s nodes "down", `vault-0` CrashLoop. `tower` and
+  `proxmox` were actually **up** (reachable from `adminvps` over WireGuard); the
+  four k8s VMs were **running** on proxmox.
+- **Root cause 1 — VLAN120 had no DHCP server.** The Keenetic (the real VLAN120
+  gateway/`10.10.120.1`) had no DHCP pool for `eth0.120`; the nodes logged
+  `eth0: DHCP lease lost` at ~01:38 and could not renew, so kubelet had no IP /
+  default route. (The main router's old `dhcp.Lan120` pool lived on the dead
+  trunk, which is why it stopped working.) **Fix:** added `dhcp.k8s`
+  (10.10.120.100-.249) + static reservations for the four node MACs on the
+  Keenetic → nodes back on `.101-.104`.
+- **Root cause 2 — Vault iSCSI LUN went read-only.** During the ~13 h VLAN120
+  outage the nodes lost their iSCSI session to tower (lun-1, the Vault LUN); the
+  ext4 journal aborted → remounted RO → `vault-0` could not open the raft bolt
+  file. **Fix:** scaled vault to 0, unmounted, `e2fsck -f -y /dev/sdb` (journal
+  recovered, fs clean), recreated the pod → `vault-0` 2/2, unsealed. (Phase 5
+  backups don't exist yet — this was recovered, not restored.)
+- **Recovery:** restarted kube-proxy/calico/flux/cert-manager/ingress/vault to
+  clear stale pod-network state after the interfaces returned. Result: 4/4 nodes
+  Ready, all pods Running, Flux applied `master@5682e67`.
+- **Home-LAN path to the server segment fixed (role `router_openwrt`).** The main
+  router still had stale directly-connected `br-srv` (192.168.30.1) / `eth0.120`
+  (10.10.120.1) on its dead trunk — it blackholed the server/cluster subnets for
+  LAN clients and duplicated the Keenetic's 192.168.30.1. Now: those interfaces
+  are `proto=none`, `rt_srv`/`rt_k8s` route `192.168.30.0/24` + `10.10.120.0/24`
+  via the Keenetic (`192.168.1.216`), and a `hairpin_lan` rule allows LAN clients
+  through. `archasus` can now reach `kubectl`, `tower` and `proxmox` directly.
+- **Split-horizon DNS:** the main-router dnsmasq now also answers
+  `/auth.metoda.cc/<node IP>` (role `router_openwrt`), so in-cluster clients
+  resolve the OIDC issuer to ingress-nginx instead of hairpinning to
+  `78.17.99.16`.
+- **Keenetic:** `wan_to_lan` forwarding added (main LAN → server/cluster) and my
+  SSH key added to `/etc/dropbear/authorized_keys`. Still hand-configured (no
+  Ansible role — see `open_questions`).
+
+## 2026-10-15 — Keycloak issuer hostname `auth.metoda.cc` + split-horizon DNS
+
+- **Why:** the OIDC issuer must be the same name inside and outside, or login on
+  the public host fails (Keycloak advertises `KC_HOSTNAME` as `iss`; clients
+  validate it and follow its endpoints). `keycloak.k8s.lan` is LAN-only, so it
+  can't be the public issuer; `auth.metoda.cc` publicly points at `adminvps`.
+- **Change:** `keycloak/deployment.yaml` `KC_HOSTNAME` → `https://auth.metoda.cc`.
+  `oauth2-proxy --oidc-issuer-url` and Vault's `vault_oidc_discovery_url` move to
+  `https://auth.metoda.cc/realms/tower`; the `keycloak_config` admin URL too.
+- **Split-horizon:** `router_openwrt` now pushes dnsmasq `address=` entries
+  `/auth.metoda.cc/10.10.120.101-104`, so in-cluster clients (oauth2-proxy,
+  Vault) resolve the issuer straight to ingress-nginx instead of hairpinning via
+  the public VPS. Outside, Timeweb answers `auth.metoda.cc` → `78.17.99.16`.
+- **Ingress:** `keycloak/ingress.yaml` already carries both `keycloak.k8s.lan`
+  and `auth.metoda.cc` (tower-ca cert); Keycloak redirects the old name to the
+  canonical one.
+- **Status:** codified in git, **not applied** (cluster down). Files:
+  `k8s/apps/keycloak/deployment.yaml`, `k8s/apps/oauth2-proxy/deployment.yaml`,
+  `ansible/roles/router_openwrt/defaults/main.yml`,
+  `ansible/roles/vault_config/defaults/main.yml`,
+  `ansible/roles/keycloak_config/defaults/main.yml`; docs updated.
+
 ## 2026-10-15 — Traefik front end on `adminvps` (Let's Encrypt HTTP-01, ADR-0003/0004)
 
 - **New Ansible role `adminvps_traefik`** (`playbooks/adminvps.yml`, imported by

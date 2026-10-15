@@ -51,6 +51,58 @@
   changed_when: "'CHANGED' in router_fw.stdout"
   notify: reload firewall
 
+- name: Route the server segment via the server router
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+    set_if_diff() {
+      cur="$(uci -q get $1 2>/dev/null || true)"
+      if [ "$cur" != "$2" ]; then uci set $1="$2"; changed=1; fi
+    }
+    del_opt() { if uci -q get $1 >/dev/null 2>&1; then uci -q delete $1; changed=1; fi; }
+
+    {% for i in router_openwrt_stale_l3_interfaces %}
+    set_if_diff network.{{ i }}.proto none
+    del_opt network.{{ i }}.ipaddr
+    del_opt network.{{ i }}.netmask
+    {% endfor %}
+
+    {% for r in router_openwrt_static_routes %}
+    if [ "$(uci -q get network.{{ r.name }} 2>/dev/null || true)" != "route" ]; then uci set network.{{ r.name }}=route; changed=1; fi
+    set_if_diff network.{{ r.name }}.interface lan
+    set_if_diff network.{{ r.name }}.target {{ r.target }}
+    set_if_diff network.{{ r.name }}.netmask {{ r.netmask }}
+    set_if_diff network.{{ r.name }}.gateway {{ r.gateway }}
+    {% endfor %}
+
+    if [ "$changed" = 1 ]; then uci commit network; echo CHANGED; else echo OK; fi
+  register: router_rt
+  changed_when: "'CHANGED' in router_rt.stdout"
+  notify: reload network
+
+- name: Allow LAN hairpin to the server segment
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+    set_if_diff() {
+      cur="$(uci -q get $1 2>/dev/null || true)"
+      if [ "$cur" != "$2" ]; then uci set $1="$2"; changed=1; fi
+    }
+
+    {% for r in router_openwrt_forward_rules %}
+    if [ "$(uci -q get firewall.{{ r.name }} 2>/dev/null || true)" != "rule" ]; then uci set firewall.{{ r.name }}=rule; changed=1; fi
+    set_if_diff firewall.{{ r.name }}.name "{{ r.title }}"
+    set_if_diff firewall.{{ r.name }}.src {{ r.src }}
+    set_if_diff firewall.{{ r.name }}.dest {{ r.dest }}
+    set_if_diff firewall.{{ r.name }}.family {{ r.family }}
+    set_if_diff firewall.{{ r.name }}.target ACCEPT
+    {% endfor %}
+
+    if [ "$changed" = 1 ]; then uci commit firewall; echo CHANGED; else echo OK; fi
+  register: router_fwd_rules
+  changed_when: "'CHANGED' in router_fwd_rules.stdout"
+  notify: reload firewall
+
 - name: Apply cluster DNS wildcard (dnsmasq)
   ansible.builtin.raw: |
     set -eu

@@ -3,7 +3,11 @@
 Central single sign-on for cluster services, run entirely in Kubernetes (Flux)
 and backed by `tower` storage.
 
-- **Keycloak 26.8.1** — IdP. `https://keycloak.k8s.lan` (ns `keycloak`).
+- **Keycloak 26.8.1** — IdP. `https://auth.metoda.cc` (ns `keycloak`) — the
+  public issuer host (`KC_HOSTNAME`). **Split-horizon DNS** resolves it to
+  ingress-nginx inside and to `adminvps` outside, so the OIDC issuer is identical
+  everywhere (required for the public host). `keycloak.k8s.lan` still routes to
+  the same Ingress but Keycloak redirects to the canonical name.
 - **Postgres 18.6** — Keycloak database, on a dedicated tower iSCSI LUN
   (`postgres`, lun 3, 20 GiB), static PV `tower-iscsi-postgres` (ns `keycloak`).
 - **oauth2-proxy 7.15.5** — forward-auth for ingress-nginx,
@@ -13,8 +17,11 @@ and backed by `tower` storage.
   by ESO into `keycloak/keycloak-secrets` and
   `oauth2-proxy/oauth2-proxy-secrets`.
 
-All names live under the wildcard DNS `*.k8s.lan` (router dnsmasq) and use TLS
-from the internal CA (`cert-manager` ClusterIssuer `tower-ca`).
+Internal names live under the wildcard DNS `*.k8s.lan` (router dnsmasq) and use
+TLS from the internal CA (`cert-manager` ClusterIssuer `tower-ca`). The Keycloak
+issuer also carries the public name `auth.metoda.cc` in the Ingress; internally
+the router dnsmasq answers it with the ingress-nginx node IPs (split-horizon), so
+in-cluster clients (oauth2-proxy, Vault) reach the issuer directly.
 
 ## Layout (GitOps)
 
@@ -30,7 +37,7 @@ ansible/roles/keycloak_config/ # reconciles realm users (Admin REST API)
 
 ## Admin access
 
-Admin console: `https://keycloak.k8s.lan/admin` → realm `tower` (or `master`).
+Admin console: `https://auth.metoda.cc/admin` → realm `tower` (or `master`).
 The bootstrap admin username/password are in Vault:
 
 ```bash

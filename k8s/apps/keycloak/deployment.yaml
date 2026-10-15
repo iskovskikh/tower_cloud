@@ -43,8 +43,11 @@ spec:
                 secretKeyRef:
                   name: keycloak-secrets
                   key: db-password
+            # Public issuer host. Split-horizon DNS resolves it to ingress-nginx
+            # inside and to adminvps outside, so the OIDC issuer is identical
+            # everywhere (required for the public host).
             - name: KC_HOSTNAME
-              value: https://keycloak.k8s.lan
+              value: https://auth.metoda.cc
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:

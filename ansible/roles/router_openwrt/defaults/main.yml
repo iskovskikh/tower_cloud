@@ -1,13 +1,31 @@
 ---
-# OpenWrt router: routing + firewall between the LAN, the server segment
-# (192.168.30.0/24, zone "srv") and the cluster VLANs.
+# OpenWrt router: LAN gateway + firewall.
 #
-# The k8s nodes live in VLAN 120 (zone "vlan120") and mount storage from tower
-# in the "srv" zone. Both networks are directly connected on the router, but
-# the default firewall REJECTs forwarding between zones, so we must add an
-# explicit forwarding pair plus per-port allow rules.
+# The server segment (192.168.30.0/24 = tower/proxmox) and the k8s cluster
+# (VLAN120 = 10.10.120.0/24) live *behind the server router* (the Keenetic,
+# 192.168.1.216), reached over this router's LAN. This router therefore has to
+# route those subnets via the server router and let LAN clients hairpin through;
+# the old dedicated trunk is unused (link down), so the subnets must NOT be
+# advertised as directly connected here (that blackholes the traffic).
 #
 # See docs/storage/plan.md (storage ports 2049/3260/3900).
+
+router_openwrt_server_router: "192.168.1.216"
+
+# Interfaces whose (now stale) connected L3 config must be disabled: the old
+# server/Kubernetes trunk is gone, so these are routed via the server router.
+router_openwrt_stale_l3_interfaces:
+  - srv
+  - Lan120
+
+router_openwrt_static_routes:
+  - {name: rt_srv, target: "192.168.30.0", netmask: "255.255.255.0", gateway: "{{ router_openwrt_server_router }}"}
+  - {name: rt_k8s, target: "10.10.120.0", netmask: "255.255.255.0", gateway: "{{ router_openwrt_server_router }}"}
+
+# Allow LAN clients to hairpin through this router to the server-router subnets
+# (this router's lan zone is otherwise forward=REJECT, which drops the hairpin).
+router_openwrt_forward_rules:
+  - {name: hairpin_lan, title: "LAN hairpin -> server segment", src: lan, dest: lan, family: ipv4}
 
 # No broad zone-pair forwarding: only the ports in router_openwrt_rules are
 # allowed through, so the zones keep their default REJECT for everything else.
@@ -40,3 +58,11 @@ router_openwrt_dns_addresses:
   - "/k8s.lan/10.10.120.102"
   - "/k8s.lan/10.10.120.103"
   - "/k8s.lan/10.10.120.104"
+  # Split-horizon for the Keycloak OIDC issuer: the public hostname
+  # (auth.metoda.cc, KC_HOSTNAME) resolves internally to ingress-nginx, so
+  # oauth2-proxy/Vault reach the issuer without a round trip via adminvps. On
+  # the public internet the same name resolves to adminvps (Timeweb zone).
+  - "/auth.metoda.cc/10.10.120.101"
+  - "/auth.metoda.cc/10.10.120.102"
+  - "/auth.metoda.cc/10.10.120.103"
+  - "/auth.metoda.cc/10.10.120.104"

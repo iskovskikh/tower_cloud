@@ -118,7 +118,8 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 
 ### k8s cluster — `10.10.120.101-104` (VLAN 120)
 - `*.k8s.lan` via ingress-nginx on all nodes — e.g. `https://jellyfin.k8s.lan`,
-  `https://opencloud.k8s.lan`, `https://keycloak.k8s.lan`, `https://vault.k8s.lan`
+  `https://opencloud.k8s.lan`, `https://vault.k8s.lan`; Keycloak's canonical host
+  is the public `auth.metoda.cc` (split-horizon → ingress-nginx internally)
 - Reachable from `adminvps` over the WireGuard tunnel (ingress, nodes, API `:6443`)
 
 ### router — `192.168.1.1`
@@ -155,8 +156,10 @@ See `open_questions:` in [`inventory.yaml`](inventory.yaml). Highlights:
 1. **`metoda.cc`** — A records `cloud` / `auth` / `*` (plus apex and `www`) are
    live, pointing at `adminvps`; set by hand in `hosting.timeweb.ru/domains` (the
    Timeweb Cloud API can't see the zone). The old parking A/AAAA were removed.
-2. Publish/secure the public apps: Keycloak needs `KC_HOSTNAME=https://auth.metoda.cc`
-   + split-horizon DNS for OIDC; which services are public vs VPN-only?
+2. Publish/secure the public apps: Keycloak's `KC_HOSTNAME` is now
+   `https://auth.metoda.cc` and split-horizon DNS is codified in `router_openwrt`
+   (dnsmasq answers `auth.metoda.cc` with the ingress-nginx node IPs) — **not yet
+   applied**. Which services are public vs VPN-only?
 3. How to manage the **Keenetic Omni II** (OpenWrt server router) by IaC?
 4. Move the k8s node DHCP reservations off the main router onto the Keenetic?
 5. `keycloak` / `vault` are not answering in the cluster — bring them up.

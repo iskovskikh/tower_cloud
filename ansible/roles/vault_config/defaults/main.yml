@@ -39,7 +39,7 @@ vault_oidc_enable: false
 vault_oidc_mount: oidc
 vault_oidc_role: tower-user
 vault_oidc_client_id: vault
-vault_oidc_discovery_url: "https://keycloak.k8s.lan/realms/tower"
+vault_oidc_discovery_url: "https://auth.metoda.cc/realms/tower"
 vault_oidc_allowed_redirect_uris:
   - "https://vault.k8s.lan/ui/vault/auth/oidc/oidc/callback"
   - "http://localhost:8250/oidc/callback"
