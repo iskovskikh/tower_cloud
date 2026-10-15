@@ -66,3 +66,10 @@ router_openwrt_dns_addresses:
   - "/auth.metoda.cc/10.10.120.102"
   - "/auth.metoda.cc/10.10.120.103"
   - "/auth.metoda.cc/10.10.120.104"
+  # Same split-horizon for OpenCloud: OC_URL is the public name
+  # (cloud.metoda.cc) and clients bootstrap against it, so it must resolve
+  # internally to ingress-nginx (publicly Timeweb answers it -> adminvps).
+  - "/cloud.metoda.cc/10.10.120.101"
+  - "/cloud.metoda.cc/10.10.120.102"
+  - "/cloud.metoda.cc/10.10.120.103"
+  - "/cloud.metoda.cc/10.10.120.104"

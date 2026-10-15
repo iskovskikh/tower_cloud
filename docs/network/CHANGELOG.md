@@ -4,6 +4,30 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-15 — OpenCloud canonical host `cloud.metoda.cc` (fix public web UI)
+
+- **Symptom:** `https://cloud.metoda.cc` served OpenCloud's web app but the UI
+  died on the generic **"Missing or invalid config / config.json"** screen.
+- **Root cause:** the deployment's `OC_URL` was `https://opencloud.k8s.lan`, so
+  the server baked that *internal* host into `config.json` (`server`),
+  `.well-known/openid-configuration` (`issuer`) and `.well-known/webfinger`
+  (`href`). The web runtime bootstraps by fetching
+  `<server>/.well-known/webfinger`; a **public** browser cannot resolve
+  `opencloud.k8s.lan`, so `loadWebfingerDiscoveryData` threw and bootstrap
+  rejected → the generic error screen. (The main bundle's error view is a
+  catch-all, so the message is not literal.)
+- **Change:** `opencloud/deployment.yaml` `OC_URL` → `https://cloud.metoda.cc`
+  (init + main container). Split-horizon added to `router_openwrt` dnsmasq
+  (`/cloud.metoda.cc/10.10.120.101-104`) so LAN clients resolve the canonical
+  name straight to ingress-nginx instead of hairpinning via `adminvps`.
+- **Status:** codified in git, **not applied** (needs `rollout restart` of the
+  OpenCloud Deployment + router dnsmasq push). Files:
+  `k8s/apps/opencloud/deployment.yaml`,
+  `ansible/roles/router_openwrt/defaults/main.yml`.
+- **Follow-up:** the internal name `opencloud.k8s.lan` still serves the same
+  Ingress but now cross-origin bootstraps against `cloud.metoda.cc` — use the
+  canonical host (public or LAN split-horizon) going forward.
+
 ## 2026-10-15 — Cluster outage + recovery (VLAN120 DHCP, Vault LUN, server routing)
 
 - **Symptom:** the whole cluster was unreachable — no `10.10.120.0/24` from

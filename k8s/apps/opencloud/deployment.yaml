@@ -41,7 +41,7 @@ spec:
             # ("configure OpenCloud with certificate checking disabled?") and
             # loops forever, since there is no TTY.
             - name: OC_URL
-              value: "https://opencloud.k8s.lan"
+              value: "https://cloud.metoda.cc"
             - name: OC_INSECURE
               value: "true"
             - name: IDM_CREATE_DEMO_USERS
@@ -82,9 +82,13 @@ spec:
         - name: opencloud
           image: opencloudeu/opencloud:7.2.4
           env:
-            # External URL baked into the OIDC issuer and every generated link.
+            # External URL baked into config.json, the OIDC issuer, webfinger
+            # and every generated link. Must be the name the browser uses:
+            # clients bootstrap against `server`/webfinger, so the public host
+            # (not opencloud.k8s.lan) — router dnsmasq answers it with the
+            # ingress-nginx node IPs on the LAN (split horizon).
             - name: OC_URL
-              value: "https://opencloud.k8s.lan"
+              value: "https://cloud.metoda.cc"
             # nginx terminates TLS; the OpenCloud proxy serves plain HTTP.
             - name: PROXY_TLS
               value: "false"

@@ -107,9 +107,11 @@ hosts:
       vlan110 (10.10.110.0/24). The `srv`/`vlan120` zones are now empty (their
       interfaces are `proto=none`); the old vlan120->srv storage rule is inert.
       DNS (dnsmasq) serves the cluster Ingress wildcard: --address '/k8s.lan/<ip>'
-      for all four node IPs (role router_openwrt, 2026-10-13), plus the
-      split-horizon '/auth.metoda.cc/<ip>' (2026-10-15) so the Keycloak issuer
-      resolves to ingress-nginx internally.
+      for all four node IPs (role router_openwrt, 2026-10-13), plus split-horizon
+      '/auth.metoda.cc/<ip>' (2026-10-15, Keycloak issuer) and
+      '/cloud.metoda.cc/<ip>' (2026-10-15, OpenCloud canonical host) so both
+      public names resolve to ingress-nginx internally instead of hairpinning to
+      the adminvps front end.
       2026-10-14: switch port 3 moved from VLAN30 (Servers) to VLAN1 (LAN) — the
       Keenetic Omni II's WAN now terminates there (DHCP 192.168.1.216) so its
       WAN subnet does not collide with the server segment.
@@ -351,8 +353,11 @@ kubernetes:
     Keycloak SSO; the HTTP API and `/socket` are left open for native clients
     (Android TV, iOS, Kodi). Nodes have no `/dev/dri` → software transcoding only.
     **OpenCloud (2026-10-13):** self-hosted file sync/share/collab
-    (opencloud.eu) in ns `opencloud`, `https://opencloud.k8s.lan`
-    (`opencloudeu/opencloud:7.2.4`). Storage **`decomposeds3`**: user **blobs in
+    (opencloud.eu) in ns `opencloud`, canonical host `https://cloud.metoda.cc`
+    (`opencloudeu/opencloud:7.2.4`); `OC_URL` set to the public name so
+    `config.json`/webfinger/OIDC issuer are browser-reachable (split-horizon DNS
+    on the LAN; the older `opencloud.k8s.lan` Ingress name still exists but
+    cross-origin bootstraps). Storage **`decomposeds3`**: user **blobs in
     Garage S3** (bucket `opencloud`; Garage runs on tower, :3900); metadata + the
     embedded IDM on a dedicated
     tower iSCSI LUN (`opencloud`, lun 5, ext4, **sparse** → floats; POSIX+xattr
