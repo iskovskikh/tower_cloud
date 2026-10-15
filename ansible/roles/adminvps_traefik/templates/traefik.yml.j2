@@ -1,0 +1,33 @@
+# Managed by Ansible (role adminvps_traefik) — do not edit by hand.
+# Static Traefik configuration.
+
+entryPoints:
+  web:
+    address: ":80"
+    # HTTP-01 challenges are answered on :80 before the redirect is applied.
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: {{ adminvps_traefik_acme_email }}
+      storage: /etc/traefik/acme/acme.json
+      httpChallenge:
+        entryPoint: web
+
+log:
+  level: INFO
+
+accessLog: {}

@@ -4,6 +4,113 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-15 — Traefik front end on `adminvps` (Let's Encrypt HTTP-01, ADR-0003/0004)
+
+- **New Ansible role `adminvps_traefik`** (`playbooks/adminvps.yml`, imported by
+  `site.yml`; host `adminvps` added to `inventory/hosts.yml`). Installs Docker +
+  the Compose v2 plugin (Ubuntu packages) and runs **Traefik v3.7.14** as a
+  Compose service with `network_mode: host`. Config: `/etc/traefik/traefik.yml`
+  (static), `dynamic.yml` (file provider), ACME store `acme/acme.json` (0600).
+- **TLS (Let's Encrypt HTTP-01).** `:80` redirects to `:443` but still answers
+  the `http-01` challenge. Certs obtained for **`cloud.metoda.cc`** and
+  **`auth.metoda.cc`** (per-host, no wildcard); http→https `301` and the served
+  cert (SNI) verified. hysteria keeps `udp/443`; Traefik takes `tcp/80`+`tcp/443`.
+- **Routing:** both hostnames proxy to the home **ingress-nginx** over the
+  WireGuard tunnel — `https://10.10.120.101-104:443`, re-encrypt with
+  `insecureSkipVerify` (internal `tower-ca`), Host header preserved. Backend is
+  a **502** today because the cluster is down (VLAN120 nodes unreachable).
+- **k8s (GitOps manifests, not yet applied):** `opencloud/ingress.yaml` gained
+  `cloud.metoda.cc`, `keycloak/ingress.yaml` gained `auth.metoda.cc`
+  (`tls.hosts` + rules) alongside the internal `*.k8s.lan` names.
+- **Pending:** bring the cluster up (nodes DOWN), then Flux applies the Ingresses;
+  Keycloak needs `KC_HOSTNAME=https://auth.metoda.cc` + split-horizon DNS for OIDC.
+
+## 2026-10-15 — DNS + TLS for `metoda.cc`: manual zone at Timeweb, HTTP-01 (ADR-0004)
+
+- **Zone state (verified via `dig`):** `metoda.cc` is **already delegated** to
+  Timeweb's nameservers — `ns1.timeweb.ru`, `ns2.timeweb.ru`, `ns3.timeweb.org`,
+  `ns4.timeweb.org` (inventory previously said "not yet delegated" — corrected).
+  At investigation time the apex `@` and `www` returned the registrar parking `A`
+  `92.53.96.201` (since replaced), plus a default `TXT`
+  `v=spf1 include:_spf.timeweb.ru ~all`. `cloud.` / `auth.` / wildcard did **not**
+  exist yet.
+- **Tried to codify the zone — not possible.** Authoring a `tofu/dns` module with
+  the official Timeweb Cloud provider (`tf.timeweb.cloud/timeweb-cloud/timeweb-cloud`)
+  failed at plan: the Cloud API does **not** know the domain —
+  `GET /api/v1/domains` → `{"total":0}`, `GET /api/v1/domains/metoda.cc` → `404`.
+  The zone is managed in the **hosting panel** (`hosting.timeweb.ru/domains`), and
+  lego has **no provider** for the Timeweb hosting API (so DNS-01 can't be
+  automated against it either). The `tofu/dns` module was removed.
+- **Decision (ADR-0004):** manage the handful of `A` records **by hand** in the
+  Timeweb hosting panel — `cloud` / `auth` / `*` → `78.17.99.16` (`adminvps`, the
+  Traefik relay from ADR-0003). A documented exception to IaC (ADR-0001); keep
+  `inventory.yaml` (`domains:`) in sync by hand. The apex and `www` were also
+  repointed at `adminvps`, replacing the parking `A`.
+- **TLS:** Let's Encrypt **HTTP-01** on `adminvps:80` (Traefik). No DNS API → no
+  wildcard certificate; per-host certs for `cloud.` / `auth.`.
+- **Status:** records **added by hand and verified** — `cloud`/`auth`/`*` + apex +
+  `www` all resolve to `78.17.99.16` (`dig @1.1.1.1`, `@ns1.timeweb.ru`). The old
+  registrar parking A (`92.53.96.201`) and AAAA (`2a03:6f00:1::5c35:60c9`) on
+  apex/`www` were removed (propagating across Timeweb's NS). Docs updated:
+  ADR-0004, `inventory.yaml` (`domains:`), `README.md`, `PLAN.md` Phase 6.
+
+## 2026-10-15 — External domain `metoda.cc` registered at Timeweb
+
+- **`metoda.cc` acquired** at **Timeweb** (`.cc`): registration `1 930 ₽`,
+  renewal `2 030 ₽/yr`. Replaces the earlier `towercloud.dev` / `towercloud.ru`
+  candidates for the external-access domain.
+- ~~**Not yet delegated**~~ — **corrected 2026-10-15:** the zone was already
+  delegated to Timeweb's nameservers on registration (see the entry above). Still
+  to do: point `cloud.` / `auth.` at `adminvps` (`78.17.99.16`) and front it with
+  the planned **Traefik + Let's Encrypt**, then wire the hosts.
+- Recorded in `inventory.yaml` under a new `domains:` section; the related
+  `open_questions` entry was updated.
+
+## 2026-10-14 — External-access plumbing: Keenetic Omni II as OpenWrt server router + WireGuard to adminvps
+
+Executed from `archasus`. The home WAN is **CGNAT** (main router `eth0.2` =
+`100.64.48.134/20`, carrier-grade NAT), so inbound port-forwarding is impossible —
+external access must go through a public relay. Chosen design: a public VPS
+(`adminvps`) runs a **WireGuard server**, and the **Keenetic Omni II** (reflashed
+to OpenWrt) runs the **WG client** and doubles as the **router for the server
+segment**.
+
+- **New host `adminvps` = `78.17.99.16`** (Ubuntu 24.04, 1 vCPU / 2 GB, user
+  `arch` with NOPASSWD sudo). It was already a personal proxy box (x-ui/Xray
+  3.2.6, hysteria udp:`443`, danted SOCKS tcp:`1080`); now also the WG server.
+- **WireGuard tunnel.** Server `adminvps` `wg0` `10.200.0.1/24`, udp `51820`;
+  client `Keenetic` `wg0` `10.200.0.2/32`. The server's `AllowedIPs` route the
+  home nets (`192.168.30.0/24`, `10.10.120.0/24`) to the Keenetic peer. Verified
+  from `adminvps`: tower `192.168.30.200:22`, proxmox `192.168.30.201:8006`,
+  all k8s nodes `10.10.120.101-104`, ingress, and k8s API `:6443` (`403`).
+- **`Keenetic Omni II` brought online, running OpenWrt 23.05.3**
+  (`ramips/mt7620`, MACs `e4:18:6b:5a:e1:38/:39`). Role: **router of the server
+  segment** (`br-lan` `192.168.30.1/24`), Wi-Fi off. `kmod-wireguard` +
+  `wireguard-tools` installed — overlay is tiny (~1.7 MB free), so `tcpdump` /
+  `iputils-arping` did not fit.
+- **Server ports move onto the Keenetic.** Physical switch: `0` = WAN, `1-4` =
+  LAN. `tower` → LAN port 2, `proxmox` → LAN port 3. Port 3 is a **trunk**
+  (`VLAN30` + `VLAN120` tagged): `VLAN30` (`eth0.30`) is **bridged into
+  `br-lan`** so proxmox's tagged management rejoins `192.168.30.0/24`; `VLAN120`
+  (`eth0.120`) is a routed interface **`10.10.120.1/24`** — the k8s nodes' new
+  gateway (keeps k8s in its own L2, as intended).
+- **Main router port 3 moved `VLAN30 → LAN`.** To give the Keenetic's WAN a
+  subnet that does not collide with the server network, the main router's switch
+  port 3 (`@switch_vlan` vid 30 → vid 1) is now an untagged **LAN** access port;
+  the Keenetic WAN takes DHCP `192.168.1.216`. The main router's `br-srv`
+  (`192.168.30.1`, VLAN30) is now **orphaned** (no physical ports).
+- **`tower` keeps `192.168.30.200`.** It briefly took DHCP `.139` off the
+  Keenetic, so a **DHCP reservation** (MAC `00:01:29:6a:b5:d6` → `.200`) was
+  added on the Keenetic to restore the address the rest of the IaC hardcodes
+  (k8s manifests, Ansible inventory, scripts). `proxmox` stays static
+  `192.168.30.201` (VLAN30 tagged `vmbr0.30`).
+- **Keenetic firewall:** rule `Allow-Mgmt-WAN` (tcp `22 80 443` in from
+  `192.168.0.0/16`) added so it stays manageable on its WAN side; `wg0` and the
+  k8s interface are in the `lan` zone.
+- **Pending:** Traefik + public domain + Let's Encrypt on `adminvps` (the
+  reverse-proxy front for `cloud.`/`auth.`), then update the k8s Ingress hosts
+  and the router's split DNS.
+
 ## 2026-10-13 — Jellyfin /config on a node-local PVC (`tower-local`)
 
 Executed from `archasus` (Ansible + Flux/kubectl).

@@ -9,10 +9,21 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - keycloak.k8s.lan
+        - keycloak.k8s.lan   # internal (split-horizon) name
+        - auth.metoda.cc      # public name, fronted by Traefik on adminvps
       secretName: keycloak-tls
   rules:
     - host: keycloak.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
+    - host: auth.metoda.cc
       http:
         paths:
           - path: /

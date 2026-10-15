@@ -1,0 +1,30 @@
+# Managed by Ansible (role adminvps_traefik) — do not edit by hand.
+# Dynamic Traefik configuration (file provider; watched for changes).
+http:
+  routers:
+{% for host in adminvps_traefik_hosts %}
+    {{ host | replace('.', '-') }}:
+      rule: "Host(`{{ host }}`)"
+      entryPoints:
+        - websecure
+      service: ingress
+      tls:
+        certResolver: letsencrypt
+{% endfor %}
+
+  services:
+    # All public hosts share the home ingress-nginx entry points; the Host
+    # header (passHostHeader defaults to true) selects the k8s Ingress.
+    ingress:
+      loadBalancer:
+        serversTransport: k8s-insecure
+        servers:
+{% for server in adminvps_traefik_ingress_servers %}
+          - url: "{{ server }}"
+{% endfor %}
+
+  serversTransports:
+    k8s-insecure:
+      # ingress-nginx serves the internal `tower-ca` certificate; the tunnel is
+      # already encrypted, so the back-end certificate is not verified.
+      insecureSkipVerify: true

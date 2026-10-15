@@ -22,10 +22,21 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - opencloud.k8s.lan
+        - opencloud.k8s.lan   # internal (split-horizon) name
+        - cloud.metoda.cc     # public name, fronted by Traefik on adminvps
       secretName: opencloud-tls
   rules:
     - host: opencloud.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: opencloud
+                port:
+                  number: 9200
+    - host: cloud.metoda.cc
       http:
         paths:
           - path: /

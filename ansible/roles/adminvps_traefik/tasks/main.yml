@@ -1,0 +1,78 @@
+---
+# adminvps — public Traefik front end (ADR-0003/0004). Docker Compose service
+# that terminates Let's Encrypt TLS and proxies named hostnames to the home
+# ingress-nginx over the WireGuard tunnel.
+
+- name: Install Docker Engine and the Compose v2 plugin
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure Docker is enabled and running
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Create the Traefik config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ adminvps_traefik_dir }}"
+    - "{{ adminvps_traefik_dir }}/acme"
+
+# Traefik refuses to start unless the ACME store exists and is mode 0600.
+# force=false: never clobber an existing account/certificate store.
+- name: Create the ACME storage file
+  ansible.builtin.copy:
+    dest: "{{ adminvps_traefik_dir }}/acme/acme.json"
+    content: ""
+    force: false
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Render the static Traefik config
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ adminvps_traefik_dir }}/traefik.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart traefik
+
+- name: Render the dynamic Traefik config
+  ansible.builtin.template:
+    src: dynamic.yml.j2
+    dest: "{{ adminvps_traefik_dir }}/dynamic.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart traefik
+
+- name: Render the Docker Compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ adminvps_traefik_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart traefik
+
+- name: Ensure the Traefik stack is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ adminvps_traefik_dir }}"
+  register: adminvps_traefik_up
+  changed_when: >
+    'Started' in adminvps_traefik_up.stdout or
+    'Created' in adminvps_traefik_up.stdout or
+    'Recreated' in adminvps_traefik_up.stdout

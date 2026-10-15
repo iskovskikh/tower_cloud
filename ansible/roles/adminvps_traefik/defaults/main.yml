@@ -1,0 +1,29 @@
+---
+# adminvps — public front end (ADR-0003): Traefik terminates public TLS with
+# Let's Encrypt (HTTP-01) and re-encrypts to the home ingress-nginx over the
+# WireGuard tunnel. Traefik runs as a Docker Compose service (the VPS had no
+# Docker before this role). See ADR-0003 / ADR-0004.
+
+adminvps_traefik_dir: /etc/traefik
+adminvps_traefik_image: "traefik:v3.7.14"
+
+# ACME account contact. Not a secret; kept as a role variable (never hard-coded
+# in templates). Let's Encrypt uses it for expiry/renewal warnings.
+adminvps_traefik_acme_email: "iskovskikh@gmail.com"
+
+# Public hostnames Traefik serves. Each gets an individual Let's Encrypt
+# certificate via HTTP-01 (no wildcard — ADR-0004). The matching k8s Ingress
+# must also list the host (k8s/apps/{opencloud,keycloak}/ingress.yaml).
+adminvps_traefik_hosts:
+  - cloud.metoda.cc   # OpenCloud
+  - auth.metoda.cc    # Keycloak
+
+# ingress-nginx runs as a hostNetwork DaemonSet on every k8s node, so any node
+# is an entry point. Traefik reaches them over the WireGuard tunnel and
+# re-encrypts (HTTPS); the internal `tower-ca` certificate is not trusted on the
+# VPS, so verification is skipped (the tunnel is already encrypted).
+adminvps_traefik_ingress_servers:
+  - https://10.10.120.101:443
+  - https://10.10.120.102:443
+  - https://10.10.120.103:443
+  - https://10.10.120.104:443

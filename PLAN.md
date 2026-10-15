@@ -7,7 +7,7 @@ Living execution plan. Legend: `[x]` done · `[~]` in progress · `[ ]` todo ·
 and all persistent data live on `tower` (ADR-0002); the whole stack is
 Infrastructure as Code (see `docs/adr/0001-infrastructure-as-code.md`).
 
-_Updated: 2026-10-13_
+_Updated: 2026-10-15_
 
 ## Phase 0 — foundations
 
@@ -144,8 +144,75 @@ _Updated: 2026-10-13_
 - [ ] disk replacement plan (~3.6 y power-on on both NDSs)
 - [ ] monitoring/alerting (mdadm MAILADDR already set)
 
+## Phase 6 — external access (public VPS + WireGuard)
+
+Design: **ADR-0003**. The home WAN is CGNAT (no public IPv4) → a public VPS
+(`adminvps`) is the relay; the **Keenetic Omni II** (OpenWrt) is the home WG
+client and the server-segment router.
+
+- [x] Confirm CGNAT (`100.64.48.0/10`) → port-forwarding impossible
+- [x] `adminvps` (`78.17.99.16`) as WireGuard **server** (`10.200.0.1`, udp 51820);
+      `arch` NOPASSWD sudo
+- [x] Keenetic Omni II → OpenWrt **server router**: LAN `192.168.30.0/24`, VLAN30
+      (proxmox) bridged in, VLAN120 (k8s) = `10.10.120.1`; `kmod-wireguard` +
+      `wireguard-tools` installed
+- [x] Main router switch port 3 `VLAN30 → LAN`; Keenetic WAN = DHCP `192.168.1.216`
+- [x] WireGuard **client** on the Keenetic (`10.200.0.2`); home nets routed over
+      the tunnel — verified `adminvps` reaches tower / proxmox / k8s nodes /
+      ingress / API `:6443`
+- [x] `tower` address pinned to `.200` (DHCP reservation on the Keenetic)
+- [x] **Traefik** reverse proxy on `adminvps` (`:80`/`:443`) — role
+      `adminvps_traefik` (Docker Compose, Traefik v3.7.14), 2026-10-15
+- [x] **domain**: `metoda.cc` registered at Timeweb (2026-10-15)
+- [x] **DNS**: zone managed **by hand** in the Timeweb hosting panel
+      (`hosting.timeweb.ru/domains`) — the Timeweb Cloud API does not see it, so
+      not IaC (ADR-0004). A `cloud`/`auth`/`*` (+ apex and `www`) → `78.17.99.16`
+      added and verified 2026-10-15; old parking A/AAAA removed.
+- [x] **TLS**: Let's Encrypt **HTTP-01** for `cloud.` / `auth.` (Traefik on
+      `adminvps:80`; no wildcard certificate) — certs issued 2026-10-15
+- [~] publish **OpenCloud** (`cloud.`) and **Keycloak** (`auth.`) k8s Ingresses
+      with the public hostnames — added to the Ingress manifests 2026-10-15; not
+      yet applied (cluster down)
+- [ ] **split-horizon DNS** so the Keycloak issuer hostname resolves the same
+      inside (ingress) and outside (VPS)
+- [ ] bring the cluster's **Keycloak / Vault** back up (currently not answering)
+- [ ] **IaC**: Ansible role/playbook for `adminvps` (WG + Traefik) and for the
+      Keenetic Omni II (OpenWrt server router) — both configured by hand 2026-10-14
+- [ ] move the k8s node **DHCP reservations** from the main router to the Keenetic
+- [ ] **harden `adminvps`** (public, internet-exposed relay)
+
 ## Done log
 
+- 2026-10-15 — **Traefik front end on `adminvps` (ADR-0003/0004).** New Ansible
+  role `adminvps_traefik` + `playbooks/adminvps.yml`: Docker + Compose v2,
+  Traefik v3.7.14 (`network_mode: host`), ACME HTTP-01. Let's Encrypt certs
+  issued for `cloud.metoda.cc` / `auth.metoda.cc`; `:80`→`:443` redirect and the
+  HTTP-01 challenge both live. Routing: `cloud.` / `auth.` → home ingress-nginx
+  (`https://10.10.120.101-104:443`, re-encrypt, skip-verify) over WireGuard. k8s
+  Ingress manifests now carry the public hostnames (not yet applied — the
+  cluster's VLAN120 nodes are DOWN, so backends return 502). Follow-up:
+  `KC_HOSTNAME`/split-horizon for Keycloak. See `docs/network/CHANGELOG.md`.
+- 2026-10-15 — **DNS + TLS decision for `metoda.cc` (ADR-0004).** Investigated
+  codifying the zone: the official Timeweb Cloud Terraform provider exists, but
+  the Timeweb Cloud API does **not** see the domain (`GET /api/v1/domains` →
+  total 0; `404` for metoda.cc) — the zone lives in the **Timeweb hosting panel**
+  (`hosting.timeweb.ru/domains`), for which no lego DNS provider exists. Decision:
+  manage the few `A` records (`cloud`/`auth`/`*` → `78.17.99.16`) **by hand** and
+  issue TLS via **HTTP-01** on `adminvps`. Records were added + verified
+  2026-10-15 (apex and `www` repointed too); a `tofu/dns` module was written and
+  then removed. See ADR-0004, inventory `domains:`.
+- 2026-10-14 — **External-access plumbing: public VPS + WireGuard (ADR-0003).**
+  Home WAN is CGNAT, so external access runs through `adminvps` (`78.17.99.16`):
+  a WireGuard **server** (`10.200.0.1:51820`, only peer = the Keenetic). The
+  spare **Keenetic Omni II** (reflashed to OpenWrt 23.05.3) became the
+  **server-segment router** (`192.168.30.1/24`, WG **client** `10.200.0.2`); its
+  port 3 to proxmox is a VLAN30+VLAN120 trunk (VLAN30 bridged into the LAN;
+  VLAN120 = `10.10.120.1`, the k8s nodes' gateway). The main router's switch
+  port 3 was moved `VLAN30 → LAN` so the Keenetic WAN can take `192.168.1.216`.
+  `tower` pinned back to `.200` via a Keenetic DHCP reservation. Verified from
+  `adminvps` over the tunnel: tower, proxmox, all k8s nodes, ingress, API
+  `:6443`. Next: Traefik + domain + TLS on `adminvps` (Phase 6). See ADR-0003 and
+  `docs/network/CHANGELOG.md`.
 - 2026-10-13 — **Jellyfin /config → node-local PVC.** Added Rancher
   **local-path-provisioner v0.0.30** + StorageClass `tower-local` (Flux), and
   moved Jellyfin's `/config` (SQLite; unsafe on NFS) off the block LUN 4 onto a

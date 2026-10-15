@@ -11,4 +11,5 @@
   roles:
     - router_openwrt
 
+- import_playbook: adminvps.yml
 - import_playbook: k8s.yml

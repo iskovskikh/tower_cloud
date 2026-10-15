@@ -1,0 +1,14 @@
+# Managed by Ansible (role adminvps_traefik) — do not edit by hand.
+services:
+  traefik:
+    image: "{{ adminvps_traefik_image }}"
+    container_name: traefik
+    restart: unless-stopped
+    # host networking: Traefik binds :80/:443 directly (no docker-proxy).
+    network_mode: host
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - "{{ adminvps_traefik_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ adminvps_traefik_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "{{ adminvps_traefik_dir }}/acme:/etc/traefik/acme"

@@ -1,7 +1,7 @@
 # tower_cloud / network inventory
 # Machine-readable source of truth. Keep this file in sync with reality.
 # Re-generate/verify with: scripts/recon.sh
-# Last verified: 2026-10-13 (see CHANGELOG.md)
+# Last verified: 2026-10-15 (see CHANGELOG.md)
 
 meta:
   site: home
@@ -9,6 +9,42 @@ meta:
   observed_from: archasus (192.168.1.204)
   method: passive discovery + read-only scans (see scripts/recon.sh)
   secrets: none stored here — credentials live outside the repo
+
+domains:
+  # Public DNS for external access. Registered AND hosted at Timeweb; the zone
+  # is managed by hand in the hosting panel (hosting.timeweb.ru/domains). The
+  # domain is NOT visible to the Timeweb Cloud API (GET /api/v1/domains -> 0),
+  # so this is a documented exception to IaC — see ADR-0004. Keep this file in
+  # sync by hand after any panel change.
+  - id: metoda.cc
+    role: external-access
+    registrar: Timeweb
+    registered: "2026-10-15"
+    price_rub: {registration: 1930, renewal: 2030}
+    dns:
+      hosting: "Timeweb hosting panel (hosting.timeweb.ru/domains)"
+      nameservers: [ns1.timeweb.ru, ns2.timeweb.ru, ns3.timeweb.org, ns4.timeweb.org]
+      delegated: true   # verified 2026-10-15 (dig NS @1.1.1.1)
+      iac: none         # manual — Timeweb Cloud API does not see the zone (ADR-0004)
+      acme: "Let's Encrypt HTTP-01 (Traefik on adminvps :80; no DNS API, no wildcard cert)"
+    records:
+      # All set by hand in the panel; added 2026-10-15, verified with dig @1.1.1.1.
+      - {name: cloud, type: A, value: 78.17.99.16, role: OpenCloud, status: present}
+      - {name: auth,  type: A, value: 78.17.99.16, role: Keycloak, status: present}
+      - {name: "*",   type: A, value: 78.17.99.16, role: "wildcard (routing only; TLS is per-host)", status: present}
+      - {name: "@",   type: A, value: 78.17.99.16, role: "apex — replaced the parking A 92.53.96.201", status: present}
+      - {name: www,   type: A, value: 78.17.99.16, role: "www — replaced the parking A 92.53.96.201", status: present}
+      - {name: "@",   type: TXT, value: "v=spf1 include:_spf.timeweb.ru ~all", role: "default SPF (Timeweb)", status: present}
+      # apex/www AAAA (registrar IPv6 parking 2a03:6f00:1::5c35:60c9) removed 2026-10-15.
+    notes: >
+      Chosen external domain (replaces the earlier towercloud.dev / towercloud.ru
+      candidates). Front: Traefik + Let's Encrypt on adminvps (78.17.99.16) —
+      **live 2026-10-15** (certs for cloud./auth. via HTTP-01) — publishing
+      cloud. / auth. over the WireGuard tunnel — see ADR-0003/0004.
+      DNS is managed manually in the Timeweb hosting panel: the Timeweb Cloud API
+      returns no domains for this account, so records cannot be codified. TLS via
+      HTTP-01 (no wildcard certificate). cloud./auth./* plus the apex and www all
+      point at adminvps; the old parking A (92.53.96.201) and AAAA are gone.
 
 subnets:
   - id: lan
@@ -19,10 +55,28 @@ subnets:
     dhcp_server: 192.168.1.1
   - id: servers
     cidr: 192.168.30.0/24
-    purpose: server segment — NAS + hypervisor
-    gateway: 192.168.30.1
-    dhcp: false            # servers use static addressing (observed)
-    routed_by: 192.168.1.1 # routed, not bridged, from LAN
+    purpose: server segment — NAS + hypervisor (LAN of the Keenetic Omni II)
+    gateway: 192.168.30.1   # the Keenetic Omni II (OpenWrt) since 2026-10-14; was the main router
+    dhcp: true
+    dhcp_server: 192.168.30.1
+    note: >
+      Now served by the Keenetic Omni II (OpenWrt); the main router's br-srv
+      (192.168.30.1, VLAN30) is orphaned. proxmox keeps a VLAN30-tagged
+      management interface (vmbr0.30) that the Keenetic bridges into this
+      segment; tower is on DHCP here.
+  - id: k8s_vlan120
+    cidr: 10.10.120.0/24
+    purpose: Kubernetes nodes (VLAN 120) — isolated L2
+    gateway: 10.10.120.1    # the Keenetic Omni II (eth0.120) since 2026-10-14; was the main router
+    dhcp: false            # nodes keep static addressing; reservations were on the main router ❓
+  - id: wg_uplink
+    cidr: 10.200.0.0/24
+    purpose: WireGuard tunnel adminvps <-> Keenetic (external-access path)
+    gateway: 10.200.0.1     # adminvps (public VPS); peer Keenetic = 10.200.0.2
+    dhcp: false
+    note: >
+      Server on adminvps (udp 51820) with AllowedIPs routing home nets
+      (192.168.30.0/24, 10.10.120.0/24) to the Keenetic peer.
   - id: lan_v6_ula
     cidr: fde7:823d:5636::/64
     purpose: IPv6 ULA advertised by the router via RA
@@ -51,6 +105,10 @@ hosts:
       any <name>.k8s.lan resolves to the ingress entry points. It also has
       static DHCP reservations for the k8s nodes (dhcp.@host[4..7]:
       10.10.120.101-104) so those IPs are stable.
+      2026-10-14: switch port 3 moved from VLAN30 (Servers) to VLAN1 (LAN) — the
+      Keenetic Omni II's WAN now terminates there (DHCP 192.168.1.216) so its
+      WAN subnet does not collide with the server segment. br-srv (VLAN30) is
+      now orphaned (no physical ports).
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
       - {port: 80, proto: tcp, service: luci-http}
@@ -77,10 +135,13 @@ hosts:
     status: up
     hostname: tower.lan
     ips:
-      servers: 192.168.30.200
-    mac: null
+      servers: 192.168.30.200   # DHCP reservation on the Keenetic (MAC 00:01:29:6a:b5:d6), 2026-10-14
+    mac: "00:01:29:6a:b5:d6"
     os: Arch Linux (kernel 7.2.9-arch1-1)
     notes: >
+      Connected to the Keenetic Omni II (LAN port 2) since 2026-10-14; the
+      address is pinned by a DHCP reservation on the Keenetic (previously a
+      reservation on the main router).
       Primary storage / media server. MiniDLNA, nginx reverse proxy. MinIO, SMB
       and NFS were removed on 2026-10-12 (see CHANGELOG). Jellyfin 10.11.6 ran as
       a Docker container (jellyfin/jellyfin:10.11.6), mounting
@@ -126,6 +187,9 @@ hosts:
       servers: 192.168.30.201
     os: Proxmox VE 8.4.21 (kernel 6.8.12-43-pve)
     notes: >
+      Connected to the Keenetic Omni II (LAN port 3, VLAN30 tagged on vmbr0.30)
+      since 2026-10-14; the Keenetic bridges VLAN30 into the 192.168.30.0/24
+      segment. Management stays static 192.168.30.201.
       Proxmox VE host. Web UI on :8006, SPICE proxy on :3128. Single NVMe
       (Samsung SSD 980 1TB) on LVM-thin, no ZFS, no cluster.
       VMs: k8s-node-1..4 (101-104, 4 GB each, VLAN 120, onboot) — only these
@@ -162,13 +226,61 @@ hosts:
     access: "n/a"
 
   - id: keenetic-omni-2
-    role: router-spare
-    status: offline
-    ips: {}
-    hardware: Keenetic Omni 2 (KN-1410)
+    role: server-router + wireguard-client
+    status: up
+    hostname: OpenWrt
+    ips:
+      servers: 192.168.30.1
+      lan_uplink: 192.168.1.216   # DHCP on the main router LAN (via its switch port 3)
+      wireguard: 10.200.0.2
+    mac: "e4:18:6b:5a:e1:39"
+    hardware: ZyXEL Keenetic Omni II (KN-1410) — MediaTek MT7620N, 64 MB RAM
+    os: OpenWrt 23.05.3 (ramips/mt7620)
     notes: >
-      Spare router, currently offline / not on the network. Intended role unknown
-      (AP? backup WAN? separate LAN? OpenWrt target?). See open_questions.
+      Reflashed to OpenWrt and brought online 2026-10-14. Now the **router for
+      the server segment** (br-lan 192.168.30.1/24) and the home **WireGuard
+      client** (10.200.0.2) to adminvps. Wi-Fi disabled. Installed:
+      kmod-wireguard + wireguard-tools (overlay has only ~1.7 MB free).
+      Switch: port 0 = WAN, ports 1-4 = LAN. WAN uplink is the main router's
+      switch port 3 (now VLAN1/LAN, DHCP 192.168.1.216). Port 3 = proxmox, a
+      **trunk** (VLAN30 + VLAN120 tagged): VLAN30 (eth0.30) is bridged into
+      br-lan; VLAN120 (eth0.120) = 10.10.120.1, the k8s nodes' gateway (keeps
+      k8s in its own L2). Port 2 = tower. Firewall rule Allow-Mgmt-WAN
+      (tcp 22/80/443 from 192.168.0.0/16) plus wg0/k8s in the lan zone.
+      Configured in place (no Ansible role yet — see open_questions).
+    services:
+      - {port: 22, proto: tcp, service: dropbear-ssh}
+      - {port: 80, proto: tcp, service: luci-http}
+      - {port: 443, proto: tcp, service: luci-https}
+    access: "http://192.168.30.1 / ssh root@192.168.1.216 (WAN) — credentials: external"
+
+  - id: adminvps
+    role: public-vps + wireguard-server
+    status: up
+    hostname: 206564.com
+    ips:
+      public: 78.17.99.16
+      wireguard: 10.200.0.1
+    os: Ubuntu 24.04 LTS (kernel 6.8.0)
+    hardware: VPS — 1 vCPU, 2 GB RAM, 15 GB disk (amd64)
+    notes: >
+      Public VPS (78.17.99.16), reachable from the internet, provided by a VPS
+      host. It was already a personal proxy box: x-ui/Xray 3.2.6,
+      hysteria-server (udp:443), danted SOCKS (tcp:1080). Since 2026-10-14 also
+      the **WireGuard server** (wg0 10.200.0.1/24, udp 51820) with the Keenetic
+      as its only peer (AllowedIPs route the home nets 192.168.30.0/24 and
+      10.10.120.0/24). User `arch` with NOPASSWD sudo. Since 2026-10-15 runs
+      **Traefik** (Docker Compose, v3.7.14; Ansible role `adminvps_traefik`) on
+      :80/:443 with Let's Encrypt **HTTP-01**, fronting `cloud.` / `auth.`
+      services at home (re-encrypt to ingress-nginx over the tunnel).
+    services:
+      - {port: 22, proto: tcp, service: ssh}
+      - {port: 80, proto: tcp, service: "Traefik (Let's Encrypt HTTP-01 + :443 redirect)"}
+      - {port: 1080, proto: tcp, service: danted SOCK5}
+      - {port: 443, proto: tcp, service: "Traefik (public TLS — cloud../auth.metoda.cc -> ingress-nginx over WG)"}
+      - {port: 443, proto: udp, service: hysteria}
+      - {port: 51820, proto: udp, service: "WireGuard server (home tunnel)"}
+    access: "ssh arch@78.17.99.16 (credentials: external)"
 
 legacy:
   # Addresses seen in shell history / known_hosts but NOT reachable now.
@@ -234,13 +346,19 @@ kubernetes:
     Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
     balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and
     the control-plane hit OOM (see CHANGELOG).
+    **Network (2026-10-14):** the VLAN120 gateway is now the **Keenetic Omni II**
+    (still 10.10.120.1, eth0.120); proxmox/k8s hang off the Keenetic, whose
+    port 3 to proxmox is a VLAN30+VLAN120 trunk. The main router's port 5 trunk
+    is no longer in use. The cluster is reachable from `adminvps` over the
+    WireGuard tunnel (ingress, nodes, API :6443). Node DHCP reservations may need
+    to move from the main router to the Keenetic ❓.
 
 open_questions:
-  - "Confirm the two 'servers' are tower (192.168.30.200) and proxmox (192.168.30.201)."
-  - "What is the goal of the tower_cloud project? (roles to add/migrate)"
-  - "Intended role of the offline Keenetic Omni 2 (AP / backup WAN / separate LAN / OpenWrt)?"
+  - "metoda.cc: add A records `cloud`/`auth`/`*` -> 78.17.99.16 BY HAND in hosting.timeweb.ru/domains (Timeweb Cloud API cannot see the zone); apex stays on parking."
+  - "Keycloak OIDC on the public host: set KC_HOSTNAME=https://auth.metoda.cc and split-horizon DNS so the issuer resolves the same inside/outside; which services are public vs VPN-only?"
+  - "No Ansible role yet for the Keenetic Omni II (OpenWrt server router) — manage it by IaC, and how?"
+  - "Move the k8s node DHCP reservations off the main router onto the Keenetic (VLAN120)?"
+  - "keycloak / vault are not answering in the cluster — bring them back up (networking is now done)."
   - "Why does archasus hold two IPv4 leases (.204 and .205) on one NIC?"
   - "What runs on the biqu* hosts (.161/.202/.203)? 3D printer controllers?"
-  - "Should 192.168.30.0/24 become a proper VLAN, and is it firewalled from the LAN?"
-  - "Proxmox vmbr0 is VLAN-aware and VMs use tags 110/120 — where are those VLANs defined (router? switch?)?"
   - "How should tower's /mnt/raid1 (native mdadm RAID1, no snapshots) and proxmox VMs be backed up?"

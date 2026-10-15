@@ -1,0 +1,5 @@
+---
+- name: restart traefik
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ adminvps_traefik_dir }}"

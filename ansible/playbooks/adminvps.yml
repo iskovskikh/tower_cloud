@@ -1,0 +1,6 @@
+---
+- name: adminvps — public front end (Traefik + Let's Encrypt)
+  hosts: adminvps
+  become: true
+  roles:
+    - adminvps_traefik
