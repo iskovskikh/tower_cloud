@@ -127,3 +127,25 @@
   register: router_dns
   changed_when: "'CHANGED' in router_dns.stdout"
   notify: reload dnsmasq
+
+- name: Pin the server router's WAN (dnsmasq DHCP reservation)
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+    set_opt() {
+      cur="$(uci -q get $1 2>/dev/null || true)"
+      if [ "$cur" != "$2" ]; then uci set $1="$2"; changed=1; fi
+    }
+
+    {% for h in router_openwrt_dhcp_hosts %}
+    if [ "$(uci -q get dhcp.{{ h.section }} 2>/dev/null || true)" != "host" ]; then uci set dhcp.{{ h.section }}=host; changed=1; fi
+    set_opt dhcp.{{ h.section }}.name "{{ h.name }}"
+    set_opt dhcp.{{ h.section }}.mac "{{ h.mac }}"
+    set_opt dhcp.{{ h.section }}.ip "{{ h.ip }}"
+    set_opt dhcp.{{ h.section }}.dns "1"
+    {% endfor %}
+
+    if [ "$changed" = 1 ]; then uci commit dhcp; echo CHANGED; else echo OK; fi
+  register: router_dhcp_hosts
+  changed_when: "'CHANGED' in router_dhcp_hosts.stdout"
+  notify: reload dnsmasq

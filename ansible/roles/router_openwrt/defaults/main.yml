@@ -73,3 +73,11 @@ router_openwrt_dns_addresses:
   - "/cloud.metoda.cc/10.10.120.102"
   - "/cloud.metoda.cc/10.10.120.103"
   - "/cloud.metoda.cc/10.10.120.104"
+
+# --- DHCP reservations (dnsmasq) --------------------------------------------
+# `section` is the uci section name; `mac`/`ip` pin the lease. The Keenetic
+# server-router's WAN is DHCP: without a reservation it can move off
+# 192.168.1.216 after a power cycle, silently breaking rt_srv/rt_k8s (which point
+# at .216) and blackholing the server segment + VLAN120. Pin it.
+router_openwrt_dhcp_hosts:
+  - { section: kcwan, name: keenetic-wan, mac: "e4:18:6b:5a:e1:39", ip: "192.168.1.216" }
