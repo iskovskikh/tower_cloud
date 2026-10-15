@@ -40,7 +40,9 @@ One entry per recon session or infrastructure change. Newest first.
   `OpenCloudDesktop`, `OpenCloudAndroid`, `OpenCloudIOS`; client scope
   `opencloud-roles` emitting a flat `roles` claim. Codified in the
   `keycloak_config` Ansible role (roles/scopes/clients reconciled via the Admin
-  API) and in `keycloak/configmap-realm.yaml` for fresh installs.
+  API) and in `keycloak/configmap-realm.yaml` for fresh installs. The demo user
+  is deliberately **not** given an `opencloud*` role, so it cannot
+  autoprovision into OpenCloud.
   `keycloak/deployment.yaml` also gains
   `--spi-connections-http-client-default-disable-trust-manager=true` so the
   backchannel-logout callback to `https://cloud.metoda.cc` (tower-ca) works.
