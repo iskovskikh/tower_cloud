@@ -1,9 +1,14 @@
 ---
-# Codified Keycloak users (realm "tower"). Applied idempotently by the role via
-# the Admin REST API; passwords are generated in Vault (role vault_config) and
-# read from the keycloak-secrets ExternalSecret. A password is only set when the
-# user is first created (temporary=true => Keycloak forces a change on first
-# login), so a password the user later chooses is never overwritten.
+# Codified Keycloak objects (realm "tower"), applied idempotently by the role
+# via the Admin REST API:
+#   - realm roles   : keycloak_realm_roles
+#   - client scopes : keycloak_client_scopes (incl. protocol mappers)
+#   - OIDC clients  : keycloak_clients
+#   - users         : keycloak_users
+# Passwords come from Vault (role vault_config) via the keycloak-secrets
+# ExternalSecret. A user password is only set when the user is first created
+# (temporary=true => Keycloak forces a change on first login), so a password the
+# user later chooses is never overwritten.
 
 keycloak_url: "https://auth.metoda.cc"
 keycloak_realm: tower
@@ -17,6 +22,115 @@ keycloak_admin_password_key: admin-password
 # LAN-only admin call, so verification is skipped (as oauth2-proxy also does).
 keycloak_validate_certs: false
 
+# OpenCloud is federated to this realm as an external OIDC provider. Its clients
+# are public (authorization code + PKCE) and the OpenCloud roles are exposed via
+# the custom `opencloud-roles` client scope, because the built-in Keycloak
+# `roles` scope emits them under the nested `realm_access.roles` claim while
+# OpenCloud (PROXY_ROLE_ASSIGNMENT_OIDC_CLAIM=roles) reads a flat `roles` claim.
+keycloak_opencloud_public_url: "https://cloud.metoda.cc"
+keycloak_opencloud_internal_url: "https://opencloud.k8s.lan"
+
+keycloak_realm_roles:
+  - { name: opencloudAdmin, description: "OpenCloud administrator" }
+  - { name: opencloudSpaceAdmin, description: "OpenCloud space administrator" }
+  - { name: opencloudUser, description: "OpenCloud user" }
+  - { name: opencloudGuest, description: "OpenCloud guest" }
+
+keycloak_client_scopes:
+  - name: opencloud-roles
+    description: "Realm roles as a flat, multi-valued `roles` claim (OpenCloud)"
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "true"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      - name: realm roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-realm-role-mapper
+        consentRequired: false
+        config:
+          multivalued: "true"
+          userinfo.token.claim: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          claim.name: roles
+          jsonType.label: String
+
+# NB: only scopes that exist in the realm. `groups` is a Keycloak default scope
+# but is absent in this imported realm; add it (and group sync) separately if needed.
+keycloak_opencloud_default_scopes: ["opencloud-roles", "web-origins", "profile", "roles", "basic", "email"]
+keycloak_opencloud_optional_scopes: ["address", "phone", "offline_access", "microprofile-jwt"]
+
+keycloak_clients:
+  - clientId: web
+    name: OpenCloud Web App
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: true
+    rootUrl: "{{ keycloak_opencloud_public_url }}"
+    adminUrl: "{{ keycloak_opencloud_public_url }}"
+    redirectUris:
+      - "{{ keycloak_opencloud_public_url }}/"
+      - "{{ keycloak_opencloud_public_url }}/oidc-callback.html"
+      - "{{ keycloak_opencloud_public_url }}/oidc-silent-redirect.html"
+      - "{{ keycloak_opencloud_internal_url }}/"
+      - "{{ keycloak_opencloud_internal_url }}/oidc-callback.html"
+      - "{{ keycloak_opencloud_internal_url }}/oidc-silent-redirect.html"
+    webOrigins:
+      - "{{ keycloak_opencloud_public_url }}"
+      - "{{ keycloak_opencloud_internal_url }}"
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "+"
+      backchannel.logout.url: "{{ keycloak_opencloud_public_url }}/backchannel_logout"
+      backchannel.logout.session.required: "true"
+    defaultClientScopes: "{{ keycloak_opencloud_default_scopes }}"
+    optionalClientScopes: "{{ keycloak_opencloud_optional_scopes }}"
+  - clientId: OpenCloudDesktop
+    name: OpenCloud Desktop Client
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: true
+    redirectUris: ["http://127.0.0.1", "http://localhost"]
+    webOrigins: []
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "+"
+    defaultClientScopes: "{{ keycloak_opencloud_default_scopes }}"
+    optionalClientScopes: "{{ keycloak_opencloud_optional_scopes }}"
+  - clientId: OpenCloudAndroid
+    name: OpenCloud Android App
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: true
+    redirectUris: ["oc://android.opencloud.eu"]
+    webOrigins: []
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "oc://android.opencloud.eu"
+    defaultClientScopes: "{{ keycloak_opencloud_default_scopes }}"
+    optionalClientScopes: "{{ keycloak_opencloud_optional_scopes }}"
+  - clientId: OpenCloudIOS
+    name: OpenCloud iOS App
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: true
+    redirectUris: ["oc://ios.opencloud.eu"]
+    webOrigins: []
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "oc://ios.opencloud.eu"
+    defaultClientScopes: "{{ keycloak_opencloud_default_scopes }}"
+    optionalClientScopes: "{{ keycloak_opencloud_optional_scopes }}"
+
 keycloak_users:
   - username: aiskovskikh
     email: aiskovskikh@k8s.lan
@@ -25,6 +139,6 @@ keycloak_users:
     enabled: true
     email_verified: true
     groups: ["/users"]
-    realm_roles: ["user"]
+    realm_roles: ["user", "opencloudAdmin"]
     password_secret_key: aiskovskikh-password
     temporary: true

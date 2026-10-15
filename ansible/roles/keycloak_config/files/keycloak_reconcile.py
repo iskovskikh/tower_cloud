@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
-"""Reconcile Keycloak realm users via the Admin REST API (idempotent).
+"""Reconcile a Keycloak realm via the Admin REST API (idempotent).
 
 Configured entirely through environment variables (set by the Ansible role):
   KC_URL, KC_ADMIN_REALM, KC_REALM, KC_ADMIN_USER, KC_ADMIN_PASS,
-  KC_INSECURE ("true"/"false"), KC_USERS (JSON list of user dicts).
+  KC_INSECURE ("true"/"false"),
+  KC_REALM_ROLES   (JSON list of {name, description}),
+  KC_CLIENT_SCOPES (JSON list of client-scope representations incl. protocolMappers),
+  KC_CLIENTS       (JSON list of client representations, incl. defaultClientScopes),
+  KC_USERS         (JSON list of user dicts).
+
+Applied in order: realm roles -> client scopes -> clients -> users, because
+clients/users reference roles and scopes by name.
 
 Existing users are never modified (passwords are not reset); missing users are
 created with a temporary password, and realm-role / group membership is ensured.
+Realm roles are created if missing. Client scopes and clients are upserted
+(only the keys listed in MANAGED_CLIENT_KEYS are compared and updated).
 Prints CHANGED or OK for Ansible's changed_when.
 """
 import json
@@ -16,6 +25,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Any, NoReturn
 
 KC_URL = os.environ["KC_URL"].rstrip("/")
 ADMIN_REALM = os.environ.get("KC_ADMIN_REALM", "master")
@@ -23,7 +33,28 @@ REALM = os.environ["KC_REALM"]
 ADMIN_USER = os.environ["KC_ADMIN_USER"]
 ADMIN_PASS = os.environ["KC_ADMIN_PASS"]
 INSECURE = os.environ.get("KC_INSECURE", "true").lower() == "true"
-USERS = json.loads(os.environ["KC_USERS"])
+REALM_ROLES = json.loads(os.environ.get("KC_REALM_ROLES", "[]"))
+CLIENT_SCOPES = json.loads(os.environ.get("KC_CLIENT_SCOPES", "[]"))
+CLIENTS = json.loads(os.environ.get("KC_CLIENTS", "[]"))
+USERS = json.loads(os.environ.get("KC_USERS", "[]"))
+
+# Only these client fields are compared/updated, so unrelated Keycloak-managed
+# fields (secrets, internal ids, ...) are left untouched.
+MANAGED_CLIENT_KEYS = (
+    "name",
+    "enabled",
+    "protocol",
+    "publicClient",
+    "standardFlowEnabled",
+    "directAccessGrantsEnabled",
+    "rootUrl",
+    "adminUrl",
+    "redirectUris",
+    "webOrigins",
+    "attributes",
+    "defaultClientScopes",
+    "optionalClientScopes",
+)
 
 CTX = ssl.create_default_context()
 if INSECURE:
@@ -31,7 +62,7 @@ if INSECURE:
     CTX.verify_mode = ssl.CERT_NONE
 
 
-def call(method, path, token=None, body=None, form=None):
+def call(method, path, token=None, body=None, form=None) -> "tuple[int, Any]":
     headers = {}
     data = None
     if form is not None:
@@ -56,9 +87,35 @@ def call(method, path, token=None, body=None, form=None):
         return err.code, parsed
 
 
-def fatal(msg):
+def fatal(msg) -> "NoReturn":
     print(f"ERROR: {msg}")
     sys.exit(1)
+
+
+def canon(value):
+    if isinstance(value, list):
+        return sorted((json.dumps(canon(v), sort_keys=True) for v in value))
+    if isinstance(value, dict):
+        return {k: canon(v) for k, v in value.items()}
+    return value
+
+
+def matches(desired, current):
+    """True if `current` already satisfies `desired`.
+
+    Dicts are compared as a subset: extra keys Keycloak adds on its own (secrets,
+    timestamps, default attributes) are ignored, so reconciliation stays
+    idempotent. Lists and scalars must match exactly.
+    """
+    if isinstance(desired, dict):
+        if not isinstance(current, dict):
+            return False
+        return all(k in current and matches(v, current[k]) for k, v in desired.items())
+    if isinstance(desired, list):
+        if not isinstance(current, list):
+            return False
+        return canon(desired) == canon(current)
+    return desired == current
 
 
 status, tok = call(
@@ -92,10 +149,141 @@ def find_group(path):
 
 
 def find_realm_role(name):
-    status, role = call("GET", f"/admin/realms/{REALM}/roles/{name}", token)
+    status, role = call("GET", f"/admin/realms/{REALM}/roles/{urllib.parse.quote(name)}", token)
     return role if status == 200 else None
 
 
+def list_client_scopes():
+    status, scopes = call("GET", f"/admin/realms/{REALM}/client-scopes", token)
+    if status != 200:
+        fatal(f"list client scopes failed ({status}): {scopes}")
+    return scopes or []
+
+
+# --- realm roles -----------------------------------------------------------
+for role in REALM_ROLES:
+    name = role["name"]
+    status, existing = call("GET", f"/admin/realms/{REALM}/roles/{urllib.parse.quote(name)}", token)
+    if status == 200:
+        continue
+    if status != 404:
+        fatal(f"lookup realm role {name} failed ({status}): {existing}")
+    status, resp = call(
+        "POST",
+        f"/admin/realms/{REALM}/roles",
+        token,
+        body={"name": name, "description": role.get("description", "")},
+    )
+    if status not in (201, 204):
+        fatal(f"create realm role {name} failed ({status}): {resp}")
+    changed = True
+
+# --- client scopes (+ their protocol mappers) ------------------------------
+for spec in CLIENT_SCOPES:
+    name = spec["name"]
+    existing = next((s for s in list_client_scopes() if s["name"] == name), None)
+    body = {
+        "name": name,
+        "description": spec.get("description", ""),
+        "protocol": spec.get("protocol", "openid-connect"),
+        "attributes": spec.get("attributes", {}),
+    }
+    if existing is None:
+        status, resp = call("POST", f"/admin/realms/{REALM}/client-scopes", token, body=body)
+        if status not in (201, 204):
+            fatal(f"create client scope {name} failed ({status}): {resp}")
+        changed = True
+        existing = next((s for s in list_client_scopes() if s["name"] == name), None)
+        if existing is None:
+            fatal(f"client scope {name} not found after create")
+    elif not (
+        matches(body["description"], existing.get("description", ""))
+        and matches(body["attributes"], existing.get("attributes", {}))
+        and existing.get("protocol") == body["protocol"]
+    ):
+        status, resp = call(
+            "PUT",
+            f"/admin/realms/{REALM}/client-scopes/{existing['id']}",
+            token,
+            body={**existing, **body},
+        )
+        if status not in (204,):
+            fatal(f"update client scope {name} failed ({status}): {resp}")
+        changed = True
+
+    sid = existing["id"]
+    status, mappers = call(
+        "GET", f"/admin/realms/{REALM}/client-scopes/{sid}/protocol-mappers/models", token
+    )
+    if status != 200:
+        fatal(f"list protocol mappers of {name} failed ({status}): {mappers}")
+    by_name = {m["name"]: m for m in (mappers or [])}
+    for mapper in spec.get("protocolMappers", []):
+        mname = mapper["name"]
+        desired = {
+            "name": mname,
+            "protocol": mapper.get("protocol", "openid-connect"),
+            "protocolMapper": mapper["protocolMapper"],
+            "consentRequired": mapper.get("consentRequired", False),
+            "config": mapper.get("config", {}),
+        }
+        current = by_name.get(mname)
+        if current is None:
+            status, resp = call(
+                "POST",
+                f"/admin/realms/{REALM}/client-scopes/{sid}/protocol-mappers/models",
+                token,
+                body=desired,
+            )
+            if status not in (201, 204):
+                fatal(f"create mapper {mname} on {name} failed ({status}): {resp}")
+            changed = True
+        elif not (
+            matches(desired["config"], current.get("config", {}))
+            and current.get("protocolMapper") == desired["protocolMapper"]
+        ):
+            status, resp = call(
+                "PUT",
+                f"/admin/realms/{REALM}/client-scopes/{sid}/protocol-mappers/models/{current['id']}",
+                token,
+                body={**current, **desired},
+            )
+            if status not in (204,):
+                fatal(f"update mapper {mname} on {name} failed ({status}): {resp}")
+            changed = True
+
+# --- clients ---------------------------------------------------------------
+for spec in CLIENTS:
+    client_id = spec["clientId"]
+    status, found = call(
+        "GET", f"/admin/realms/{REALM}/clients?clientId={urllib.parse.quote(client_id)}", token
+    )
+    if status != 200:
+        fatal(f"lookup client {client_id} failed ({status}): {found}")
+    if not found:
+        status, resp = call("POST", f"/admin/realms/{REALM}/clients", token, body=spec)
+        if status not in (201, 204):
+            fatal(f"create client {client_id} failed ({status}): {resp}")
+        changed = True
+    else:
+        current = found[0]
+        drift = any(
+            not matches(spec[key], current.get(key))
+            for key in MANAGED_CLIENT_KEYS
+            if key in spec
+        )
+        if drift:
+            status, resp = call(
+                "PUT",
+                f"/admin/realms/{REALM}/clients/{current['id']}",
+                token,
+                body={**current, **spec},
+            )
+            if status not in (204,):
+                fatal(f"update client {client_id} failed ({status}): {resp}")
+            changed = True
+
+# --- users -----------------------------------------------------------------
 for user in USERS:
     username = user["username"]
     status, found = call(

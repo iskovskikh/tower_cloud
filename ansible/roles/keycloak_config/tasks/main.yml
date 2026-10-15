@@ -1,7 +1,8 @@
 ---
-# Reconciles Keycloak realm users. Idempotent: existing users are left as-is
-# (their password is never reset), missing users are created, and role/group
-# membership is ensured. Run on the control host — only the stdlib is needed.
+# Reconciles Keycloak realm objects (roles, client scopes, OIDC clients and
+# users). Idempotent: realm roles/scopes/clients are upserted, existing users are
+# left as-is (their password is never reset), missing users are created, and
+# role/group membership is ensured. Run on the control host — stdlib only.
 
 - name: keycloak_config | read the Keycloak admin Secret
   ansible.builtin.command:
@@ -29,6 +30,9 @@
     KC_ADMIN_USER: "{{ ((kc_secret.stdout | from_json).data[keycloak_admin_username_key]) | b64decode }}"
     KC_ADMIN_PASS: "{{ ((kc_secret.stdout | from_json).data[keycloak_admin_password_key]) | b64decode }}"
     KC_INSECURE: "{{ 'false' if keycloak_validate_certs | bool else 'true' }}"
+    KC_REALM_ROLES: "{{ keycloak_realm_roles | default([]) | to_json }}"
+    KC_CLIENT_SCOPES: "{{ keycloak_client_scopes | default([]) | to_json }}"
+    KC_CLIENTS: "{{ keycloak_clients | default([]) | to_json }}"
     KC_USERS: "{{ kc_users | to_json }}"
   register: kc_run
   changed_when: "'CHANGED' in kc_run.stdout"

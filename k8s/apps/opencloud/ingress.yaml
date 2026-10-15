@@ -1,7 +1,7 @@
-# OpenCloud is its own identity provider (built-in IDM/IDP), so — unlike
-# Jellyfin/Transmission — this host is NOT behind oauth2-proxy forward-auth:
-# the OpenCloud web UI logs in against its own OIDC endpoint served on the same
-# host. Keycloak federation is a possible follow-up.
+# OpenCloud uses an external OIDC identity provider — Keycloak (realm "tower"),
+# see the deployment env — so, unlike Jellyfin/Transmission, this host is NOT
+# behind oauth2-proxy forward-auth: the OpenCloud web UI and the native clients
+# run the OAuth2 authorization-code + PKCE flow against Keycloak directly.
 #
 # The proxy-body/buffering/timeout annotations mirror OpenCloud's reference
 # nginx config: uploads (Tus) and server-sent events need large bodies,

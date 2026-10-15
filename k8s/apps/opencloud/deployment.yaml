@@ -106,6 +106,59 @@ spec:
                 secretKeyRef:
                   name: opencloud-secrets
                   key: IDM_ADMIN_PASSWORD
+            # --- external OIDC identity provider: Keycloak (realm "tower") ---
+            # SSO: the browser/apps authenticate against Keycloak, not the
+            # built-in IDP. Only `idp` is excluded — the built-in `idm` (embedded
+            # LDAP on the tower LUN) is kept and stores the autoprovisioned users
+            # (the "smaller setup" option from the OpenCloud docs, no extra LDAP).
+            - name: OC_EXCLUDE_RUN_SERVICES
+              value: "idp"
+            - name: OC_OIDC_ISSUER
+              value: "https://auth.metoda.cc/realms/tower"
+            - name: IDP_DOMAIN
+              value: "auth.metoda.cc"
+            - name: IDP_ISSUER_URL
+              value: "https://auth.metoda.cc/realms/tower"
+            # Serve Keycloak's .well-known/openid-configuration on the base URL.
+            - name: PROXY_OIDC_REWRITE_WELLKNOWN
+              value: "true"
+            # Verify access tokens as JWTs against Keycloak's signing keys.
+            - name: PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD
+              value: "jwt"
+            # Just-in-time provisioning of OpenCloud accounts from Keycloak
+            # claims on first login; the Keycloak username is the OpenCloud
+            # username (see PROXY_USER_OIDC_CLAIM / AUTOPROVISION below).
+            - name: PROXY_AUTOPROVISION_ACCOUNTS
+              value: "true"
+            - name: PROXY_USER_OIDC_CLAIM
+              value: "preferred_username"
+            - name: PROXY_AUTOPROVISION_CLAIM_USERNAME
+              value: "preferred_username"
+            - name: PROXY_USER_CS3_CLAIM
+              value: "username"
+            # Roles come from the flat `roles` claim that the Keycloak client
+            # scope `opencloud-roles` adds (opencloudAdmin/-SpaceAdmin/-User/-Guest).
+            - name: PROXY_ROLE_ASSIGNMENT_DRIVER
+              value: "oidc"
+            - name: PROXY_ROLE_ASSIGNMENT_OIDC_CLAIM
+              value: "roles"
+            # Admin is role-based; there is no fixed admin user id.
+            - name: OC_ADMIN_USER_ID
+              value: ""
+            - name: SETTINGS_SETUP_DEFAULT_ASSIGNMENTS
+              value: "false"
+            - name: GRAPH_ASSIGN_DEFAULT_USER_ROLE
+              value: "false"
+            - name: GRAPH_USERNAME_MATCH
+              value: "none"
+            # The built-in LDAP must be writable so autoprovisioning can create users.
+            - name: OC_LDAP_SERVER_WRITE_ENABLED
+              value: "true"
+            - name: FRONTEND_READONLY_USER_ATTRIBUTES
+              value: "user.onPremisesSamAccountName,user.displayName,user.mail,user.passwordProfile,user.memberOf"
+            # "Edit account" in the OpenCloud UI points at the Keycloak account console.
+            - name: WEB_OPTION_ACCOUNT_EDIT_LINK_HREF
+              value: "https://auth.metoda.cc/realms/tower/account"
             # DecomposedS3: user blobs live in Garage (S3); metadata + the
             # embedded IDM stay on the local block volume (needs xattrs).
             - name: STORAGE_USERS_DRIVER

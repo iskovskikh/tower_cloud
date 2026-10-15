@@ -26,6 +26,12 @@ spec:
             - --http-enabled=true
             - --proxy-headers=xforwarded
             - --health-enabled=true
+            # The internal CA (tower-ca) is not in the JVM trust store. Keycloak's
+            # backchannel-logout callbacks go to https://cloud.metoda.cc, which
+            # split-horizon resolves to ingress-nginx (tower-ca cert); like
+            # oauth2-proxy / OpenCloud (OC_INSECURE), skip outbound TLS
+            # verification. Mirrors opencloud-compose's INSECURE handling.
+            - --spi-connections-http-client-default-disable-trust-manager=true
           ports:
             - name: http
               containerPort: 8080

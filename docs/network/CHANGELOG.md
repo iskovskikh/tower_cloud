@@ -4,6 +4,54 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-15 — Power-loss recovery: Keenetic WAN moved off .216, blackholing the server segment
+
+- **Symptom:** after a facility power loss everything behind the Keenetic was
+  unreachable (tower `.200`, proxmox `.201`, k8s `10.10.120.101-104`), while the
+  main router was up — `kubectl` → `no route to host` to the API.
+- **Root cause:** the Keenetic server-router WAN is DHCP with **no reservation**,
+  so after reboot it came back on `192.168.1.101` (lease hostname `OpenWrt`)
+  instead of `192.168.1.216`. The main router's static routes `network.rt_srv` /
+  `network.rt_k8s` both point at `.216` → the server segment and VLAN120 were
+  blackholed. The Keenetic itself was healthy (`br-lan` = `192.168.30.1`,
+  `eth0.120` = `10.10.120.1`, wg0 up); only its WAN address had drifted.
+- **Fix:** new `router_openwrt_dhcp_hosts` in the `router_openwrt` role pins the
+  Keenetic WAN MAC `e4:18:6b:5a:e1:39` → `192.168.1.216` (dnsmasq `config host`,
+  uci section `kcwan`). Applied to the main router (`uci commit dhcp` +
+  `dnsmasq reload`); the Keenetic's WAN renewed onto `.216` and the routes
+  recovered. Files: `ansible/roles/router_openwrt/{defaults,tasks}/main.yml`.
+- **Follow-up:** the Keenetic is still hand-configured (no Ansible role) — either
+  keep this reservation or give its WAN a static IP.
+
+## 2026-10-15 — OpenCloud SSO: federate to Keycloak (external OIDC IdP)
+
+- **Change:** OpenCloud (ns `opencloud`) now authenticates against **Keycloak**
+  (realm `tower`, issuer `https://auth.metoda.cc`) instead of its built-in IDP.
+  `k8s/apps/opencloud/deployment.yaml` gains `OC_EXCLUDE_RUN_SERVICES=idp`,
+  `OC_OIDC_ISSUER`/`IDP_DOMAIN`/`IDP_ISSUER_URL`, `PROXY_OIDC_REWRITE_WELLKNOWN`,
+  `PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD=jwt`, autoprovisioning
+  (`PROXY_AUTOPROVISION_ACCOUNTS=true`, `preferred_username` mapping,
+  `PROXY_USER_CS3_CLAIM=username`), role assignment via the flat `roles` claim
+  (`PROXY_ROLE_ASSIGNMENT_DRIVER=oidc`) and `WEB_OPTION_ACCOUNT_EDIT_LINK_HREF`.
+  The built-in **IDM/LDAP is kept** (only `idp` excluded) and stores the
+  autoprovisioned users.
+- **Keycloak side:** realm roles `opencloudAdmin`/`opencloudSpaceAdmin`/
+  `opencloudUser`/`opencloudGuest`; public PKCE clients `web`,
+  `OpenCloudDesktop`, `OpenCloudAndroid`, `OpenCloudIOS`; client scope
+  `opencloud-roles` emitting a flat `roles` claim. Codified in the
+  `keycloak_config` Ansible role (roles/scopes/clients reconciled via the Admin
+  API) and in `keycloak/configmap-realm.yaml` for fresh installs.
+  `keycloak/deployment.yaml` also gains
+  `--spi-connections-http-client-default-disable-trust-manager=true` so the
+  backchannel-logout callback to `https://cloud.metoda.cc` (tower-ca) works.
+- **Status:** codified in git, **not applied**. `k8s/` is Flux-synced from
+  `master` (`git@github.com:iskovskikh/tower_cloud.git`) — the manifests apply on
+  push; the realm objects are applied by `ansible-playbook playbooks/keycloak.yml`.
+  Files: `k8s/apps/opencloud/deployment.yaml`, `k8s/apps/opencloud/ingress.yaml`
+  (comment), `k8s/apps/keycloak/configmap-realm.yaml`,
+  `k8s/apps/keycloak/deployment.yaml`, `ansible/roles/keycloak_config/`. See
+  `docs/identity/README.md`.
+
 ## 2026-10-15 — OpenCloud canonical host `cloud.metoda.cc` (fix public web UI)
 
 - **Symptom:** `https://cloud.metoda.cc` served OpenCloud's web app but the UI

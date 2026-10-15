@@ -129,14 +129,18 @@ _Updated: 2026-10-15_
 - [x] **OpenCloud** — self-hosted file sync/share/collab (opencloud.eu, the Go
       fork of ownCloud Infinite Scale), ns `opencloud`, `opencloud.k8s.lan`.
       Manifests in `k8s/apps/opencloud/` (Deployment
-      `opencloudeu/opencloud:7.2.4`, built-in IDM/IDP — **not** behind
-      oauth2-proxy; Service :9200; Ingress with `tower-ca`; ExternalSecret from
+      `opencloudeu/opencloud:7.2.4`, built-in IDM kept, **external OIDC IdP =
+      Keycloak** (`idp` service disabled) — **not** behind oauth2-proxy; Service
+      :9200; Ingress with `tower-ca`; ExternalSecret from
       Vault `secret/opencloud`). Storage is **`decomposeds3`**: user **blobs go
       to Garage S3** (bucket `opencloud`); metadata + the embedded IDM stay on a
       tower iSCSI LUN (lun 5, 500 GiB **sparse** — floats) because POSIX+xattrs
       can't be served over this NFS. `/etc/opencloud` on a small `tower-nfs` PVC.
       Verified end-to-end (WebDAV upload → 1 object in Garage, round-trip OK);
-      ingress `curl --cacert tower-ca` → 200. Keycloak federation is a follow-up.
+      ingress `curl --cacert tower-ca` → 200. **SSO**: federated to Keycloak
+      (realm `tower`, issuer `auth.metoda.cc`) as an external OIDC IdP —
+      autoprovisioning from the `preferred_username` claim, roles from the flat
+      `roles` claim (`opencloudAdmin`/…), see `docs/identity/README.md`.
 
 ## Phase 5 — reliability
 
@@ -184,6 +188,19 @@ client and the server-segment router.
 
 ## Done log
 
+- 2026-10-15 — **OpenCloud SSO via Keycloak (external OIDC IdP).** OpenCloud now
+  authenticates against Keycloak (realm `tower`, issuer `auth.metoda.cc`) instead
+  of its built-in IDP: `OC_EXCLUDE_RUN_SERVICES=idp` (the built-in **IDM/LDAP is
+  kept** and holds the autoprovisioned users), `OC_OIDC_ISSUER`,
+  `PROXY_AUTOPROVISION_ACCOUNTS=true` with `preferred_username` mapping, and
+  `PROXY_ROLE_ASSIGNMENT_DRIVER=oidc` reading a flat `roles` claim. Keycloak
+  gains the `opencloudAdmin/-SpaceAdmin/-User/-Guest` realm roles, four public
+  PKCE clients (`web`/`OpenCloudDesktop`/`OpenCloudAndroid`/`OpenCloudIOS`) and
+  an `opencloud-roles` client scope that emits the flat `roles` claim. Realm
+  objects are codified in the `keycloak_config` Ansible role (roles/scopes/clients
+  reconciled via the Admin API) and in `keycloak/configmap-realm.yaml` for fresh
+  installs. Manifests/roles edited, **not applied** (cluster down). See
+  `docs/identity/README.md`.
 - 2026-10-15 — **Keycloak issuer hostname → `auth.metoda.cc` + split-horizon DNS.**
   `KC_HOSTNAME=https://auth.metoda.cc` (was `keycloak.k8s.lan`); the router role
   (`router_openwrt`) dnsmasq now answers `auth.metoda.cc` with the ingress-nginx

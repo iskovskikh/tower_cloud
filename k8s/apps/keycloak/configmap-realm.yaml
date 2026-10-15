@@ -27,7 +27,11 @@ data:
       "roles": {
         "realm": [
           { "name": "admin" },
-          { "name": "user" }
+          { "name": "user" },
+          { "name": "opencloudAdmin", "description": "OpenCloud administrator" },
+          { "name": "opencloudSpaceAdmin", "description": "OpenCloud space administrator" },
+          { "name": "opencloudUser", "description": "OpenCloud user" },
+          { "name": "opencloudGuest", "description": "OpenCloud guest" }
         ]
       },
       "groups": [
@@ -95,6 +99,135 @@ data:
               }
             }
           ]
+        },
+        {
+          "clientId": "web",
+          "name": "OpenCloud Web App",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "rootUrl": "https://cloud.metoda.cc",
+          "adminUrl": "https://cloud.metoda.cc",
+          "redirectUris": [
+            "https://cloud.metoda.cc/",
+            "https://cloud.metoda.cc/oidc-callback.html",
+            "https://cloud.metoda.cc/oidc-silent-redirect.html",
+            "https://opencloud.k8s.lan/",
+            "https://opencloud.k8s.lan/oidc-callback.html",
+            "https://opencloud.k8s.lan/oidc-silent-redirect.html"
+          ],
+          "webOrigins": [
+            "https://cloud.metoda.cc",
+            "https://opencloud.k8s.lan"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "+",
+            "backchannel.logout.url": "https://cloud.metoda.cc/backchannel_logout",
+            "backchannel.logout.session.required": "true"
+          },
+          "defaultClientScopes": [
+            "opencloud-roles", "web-origins", "profile", "roles", "basic", "email"
+          ],
+          "optionalClientScopes": [
+            "address", "phone", "offline_access", "microprofile-jwt"
+          ]
+        },
+        {
+          "clientId": "OpenCloudDesktop",
+          "name": "OpenCloud Desktop Client",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [
+            "http://127.0.0.1",
+            "http://localhost"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "+"
+          },
+          "defaultClientScopes": [
+            "opencloud-roles", "web-origins", "profile", "roles", "basic", "email"
+          ],
+          "optionalClientScopes": [
+            "address", "phone", "offline_access", "microprofile-jwt"
+          ]
+        },
+        {
+          "clientId": "OpenCloudAndroid",
+          "name": "OpenCloud Android App",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [
+            "oc://android.opencloud.eu"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "oc://android.opencloud.eu"
+          },
+          "defaultClientScopes": [
+            "opencloud-roles", "web-origins", "profile", "roles", "basic", "email"
+          ],
+          "optionalClientScopes": [
+            "address", "phone", "offline_access", "microprofile-jwt"
+          ]
+        },
+        {
+          "clientId": "OpenCloudIOS",
+          "name": "OpenCloud iOS App",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [
+            "oc://ios.opencloud.eu"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "oc://ios.opencloud.eu"
+          },
+          "defaultClientScopes": [
+            "opencloud-roles", "web-origins", "profile", "roles", "basic", "email"
+          ],
+          "optionalClientScopes": [
+            "address", "phone", "offline_access", "microprofile-jwt"
+          ]
+        }
+      ],
+      "clientScopes": [
+        {
+          "name": "opencloud-roles",
+          "description": "Realm roles as a flat, multi-valued `roles` claim (OpenCloud)",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "realm roles",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-realm-role-mapper",
+              "consentRequired": false,
+              "config": {
+                "multivalued": "true",
+                "userinfo.token.claim": "true",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "roles",
+                "jsonType.label": "String"
+              }
+            }
+          ]
         }
       ],
       "users": [
@@ -116,7 +249,8 @@ data:
             "/users"
           ],
           "realmRoles": [
-            "user"
+            "user",
+            "opencloudUser"
           ]
         },
         {
@@ -135,7 +269,8 @@ data:
             "/users"
           ],
           "realmRoles": [
-            "user"
+            "user",
+            "opencloudAdmin"
           ]
         }
       ]
