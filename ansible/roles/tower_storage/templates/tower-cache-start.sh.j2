@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Bring up the dm-cache device that fronts {{ tower_cache_mount }}.
+#   origin = {{ tower_cache_origin }} (mdadm RAID1; its data is never written directly)
+#   cache  = {{ tower_cache_device }} (Intel Optane): p1 metadata, p2 cache data
+# Exposed as /dev/mapper/{{ tower_cache_name }}; the same ext4 is mounted through it.
+# See docs/storage/dmcache.md. Idempotent; safe to re-run.
+set -euo pipefail
+
+NAME="{{ tower_cache_name }}"
+META="{{ tower_cache_meta_part }}"
+DATA="{{ tower_cache_data_part }}"
+ORIGIN="{{ tower_cache_origin }}"
+BLOCK={{ tower_cache_block_sectors }}     # sectors per cache block (128 = 64 KiB)
+MODE="{{ tower_cache_mode }}"             # writethrough | writeback
+
+for dev in "$META" "$DATA" "$ORIGIN"; do
+  if [ ! -b "$dev" ]; then
+    echo "dm-cache: missing block device $dev" >&2
+    exit 1
+  fi
+done
+
+if dmsetup info "$NAME" >/dev/null 2>&1; then
+  echo "dm-cache: $NAME already active"
+  exit 0
+fi
+
+modprobe dm_cache
+modprobe dm_cache_smq 2>/dev/null || true
+
+sectors=$(blockdev --getsz "$ORIGIN")
+dmsetup create "$NAME" --table "0 $sectors cache $META $DATA $ORIGIN $BLOCK 1 $MODE smq 0"
+echo "dm-cache: created $NAME ($MODE, block=${BLOCK} sectors) over $ORIGIN"

@@ -44,6 +44,24 @@ tower_iscsi_initiators: []
 # When initiators are pinned, disable dynamic ACLs so only they may attach.
 tower_iscsi_generate_node_acls: "{{ 0 if (tower_iscsi_initiators | length > 0) else 1 }}"
 
+# --- dm-cache: Optane read/write cache for the data array -----------------
+# An Intel Optane M10 SSD (/dev/nvme0n1) fronts the mdadm array /dev/md0 via
+# the device-mapper `cache` target, giving ~12 GiB of fast cache for the 3.6 TB
+# of spinning rust. The origin's data is never modified — the same ext4 is only
+# reached through /dev/mapper/raid1cache, so /mnt/raid1 mounts the cache device.
+# DISRUPTIVE: switching /mnt/raid1 to the cache device is a reboot cutover.
+# See docs/storage/dmcache.md. Enable with -e tower_cache_enabled=true.
+tower_cache_enabled: false
+tower_cache_device: /dev/nvme0n1          # the Optane SSD (whole disk)
+tower_cache_origin: /dev/md0              # the array being cached
+tower_cache_name: raid1cache              # -> /dev/mapper/raid1cache
+tower_cache_meta_part: "{{ tower_cache_device }}p1"   # dm-cache metadata (1 GiB)
+tower_cache_data_part: "{{ tower_cache_device }}p2"   # dm-cache data (rest)
+tower_cache_meta_size: 1GiB
+tower_cache_block_sectors: 128            # cache block = 128 x 512 B = 64 KiB
+tower_cache_mode: writethrough            # writethrough (safe) | writeback
+tower_cache_mount: /mnt/raid1
+
 # --- Garage: S3 object storage --------------------------------------------
 # Runs on the storage host, next to the disks: data_dir lives directly on
 # /mnt/raid1, so no iSCSI LUN / PV / PVC is involved. Clients (in and out of

@@ -160,6 +160,9 @@ hosts:
       Data array /mnt/raid1 — native mdadm RAID1 md0 (sdb+sdc, Toshiba N300
       HDWG440 4 TB, metadata 1.0, internal bitmap); converted from Intel IMSM
       fakeraid 2026-10-13 (see CHANGELOG).
+      Since 2026-10-15 an Intel Optane M10 SSD (`nvme0n1`, 16 GB, MEMPEK1J016GAL)
+      caches md0 through dm-cache in **writethrough** mode; /mnt/raid1 mounts
+      /dev/mapper/raid1cache, not /dev/md0 directly. See docs/storage/dmcache.md.
       Historically was 192.168.1.200 before the move to the .30 subnet.
       Since 2026-10-13 also the cluster storage appliance (СХД): NFSv4 export
       /mnt/raid1/k8s-nfs (RWX), an iSCSI LIO target iqn.2026-10.lan.tower:k8s

@@ -1,0 +1,19 @@
+[Unit]
+Description=dm-cache (Optane) for {{ tower_cache_mount }} on {{ tower_cache_origin }}
+Documentation=man:dmsetup(8)
+DefaultDependencies=no
+Requires=dev-{{ tower_cache_origin | basename }}.device
+After=dev-{{ tower_cache_origin | basename }}.device
+Before=local-fs-pre.target
+Wants=local-fs-pre.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tower-cache-start.sh
+ExecStop=/usr/bin/dmsetup remove {{ tower_cache_name }}
+
+[Install]
+WantedBy=sysinit.target

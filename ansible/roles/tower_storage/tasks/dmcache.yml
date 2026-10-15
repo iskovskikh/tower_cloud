@@ -1,0 +1,72 @@
+---
+# dm-cache: an Intel Optane SSD ({{ tower_cache_device }}) caches the data array
+# ({{ tower_cache_origin }}) through the device-mapper `cache` target. The target
+# is exposed as /dev/mapper/{{ tower_cache_name }} and {{ tower_cache_mount }}
+# mounts *that* device — the origin's ext4 is never modified, only read/written
+# through the cache. See docs/storage/dmcache.md.
+#
+# Cutover is a reboot: fstab now points at the dm device and the boot unit
+# creates it before local-fs.target. Run the play, then reboot tower.
+
+- name: dmcache | install thin-provisioning-tools (cache_check / cache_repair)
+  community.general.pacman:
+    name: thin-provisioning-tools
+    state: present
+
+- name: dmcache | check for an existing first partition on the cache SSD
+  ansible.builtin.stat:
+    path: "{{ tower_cache_meta_part }}"
+  register: tower_cache_meta_stat
+
+- name: dmcache | partition the cache SSD (p1 metadata, p2 cache data)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      sfdisk {{ tower_cache_device }} <<'SF'
+      label: gpt
+      , {{ tower_cache_meta_size }}, L
+      , , L
+      SF
+      partprobe {{ tower_cache_device }}
+      udevadm settle
+  when: not tower_cache_meta_stat.stat.exists
+  register: tower_cache_sfdisk
+  changed_when: tower_cache_sfdisk.rc == 0
+
+- name: dmcache | wait for the cache partitions to appear
+  ansible.builtin.wait_for:
+    path: "{{ item }}"
+  loop:
+    - "{{ tower_cache_meta_part }}"
+    - "{{ tower_cache_data_part }}"
+
+- name: dmcache | install the cache bring-up script
+  ansible.builtin.template:
+    src: tower-cache-start.sh.j2
+    dest: /usr/local/sbin/tower-cache-start.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: dmcache | install the boot unit
+  ansible.builtin.template:
+    src: tower-cache.service.j2
+    dest: /etc/systemd/system/tower-cache.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload systemd
+
+- name: dmcache | enable the boot unit
+  ansible.builtin.systemd_service:
+    name: tower-cache
+    enabled: true
+    daemon_reload: true
+
+- name: dmcache | mount {{ tower_cache_mount }} through the cache device
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^\S+\s+{{ tower_cache_mount }}\s+ext4\s+.*$'
+    line: "/dev/mapper/{{ tower_cache_name }} {{ tower_cache_mount }} ext4 defaults 0 3"
+    state: present
+    backup: true

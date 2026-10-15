@@ -4,7 +4,40 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
-## 2026-10-15 — OpenCloud login blocked: missing CSP for the external IdP
+## 2026-10-15 — tower: Intel Optane SSD added as a dm-cache for /mnt/raid1
+
+- **Change:** an **Intel Optane Memory M10 (16 GB, `MEMPEK1J016GAL`)** was
+  installed in tower (`/dev/nvme0n1`, ~13.4 GiB usable). It now caches the mdadm
+  array `/dev/md0` via the kernel **device-mapper `cache`** target in
+  **writethrough** mode: GPT on the Optane (`p1` = 1 GiB metadata, `p2` = ~12 GiB
+  cache data, 64 KiB blocks, `smq` policy), exposed as `/dev/mapper/raid1cache`.
+  `/mnt/raid1` now mounts that device instead of `/dev/md0` — the ext4 and the
+  array data are unchanged (dm-cache never rewrites the origin in-place).
+- **Why not bcache:** bcache's superblock sits at an 8 KiB offset and needs the
+  backing device reformatted around it — unacceptable for a live 2.4 TB ext4 with
+  no backup. dm-cache maps the existing device in place.
+- **Cutover:** codified as `tower_cache_enabled` in the `tower_storage` role
+  (`tasks/dmcache.yml`, tag `tower_cache`, `templates/tower-cache.*`);
+  `/etc/fstab` now points `/mnt/raid1` at `/dev/mapper/raid1cache` and the
+  `tower-cache` boot unit creates the device before `local-fs-pre.target`. Procedure
+  validated first on loop devices (table syntax, metadata auto-format, clean
+  teardown), then applied and cut over by **rebooting tower** (2026-10-16).
+  Applied with `ansible-playbook playbooks/site.yml --limit tower
+  -e tower_cache_enabled=true --tags tower_cache` (tagged so garage/postgres
+  config, which needs env secrets, is untouched).
+- **Verified after reboot:** `/mnt/raid1` mounts `/dev/mapper/raid1cache` (ext4,
+  same UUID, 2.4 TB intact); `dmsetup status` shows `writethrough`, `smq`, 64 KiB
+  blocks, promotions growing; NFS/iSCSI/Garage/Postgres services and all k8s app
+  pods back up. Kernel note: `Origin device (md0) discard unsupported: Disabling
+  discard passdown` — benign.
+- **Status:** applied and live (`ansible/roles/tower_storage`,
+  `docs/storage/dmcache.md`). Writethrough = a dead Optane costs cache warmth,
+  not data. Benefit expected on random I/O (fs metadata, Postgres, Garage
+  metadata, the LUNs); large sequential media I/O gains little (no sequential
+  bypass in dm-cache/smq).
+
+---
+
 
 - **Symptom:** `https://cloud.metoda.cc` login failed in the browser —
   `oidc-client-ts` "Connecting to

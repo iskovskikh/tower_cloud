@@ -29,6 +29,7 @@ Priority for now is a **PoC on what already exists**; durability comes later.
 
 ```
 tower 192.168.30.200  (storage appliance + stateful services, ADR-0002)
+ ├─ /mnt/raid1  ext4 -> /dev/mapper/raid1cache  (dm-cache writethrough; Optane nvme0n1 caches md0)
  ├─ NFS export  :2049   /mnt/raid1/k8s-nfs       -> StorageClass tower-nfs (RWX)
  ├─ iSCSI LIO   :3260   fileio LUNs  /mnt/raid1/k8s-iscsi/*.img  (configfs)
  ├─ Garage S3   :3900   data_dir /mnt/raid1/garage   (Docker)
@@ -44,7 +45,7 @@ k8s (k8s-node-1..4, VMs on proxmox)
 
 See [`garage.md`](garage.md) (S3), [`postgres.md`](postgres.md) (SQL),
 [`static-iscsi.md`](static-iscsi.md) (block), [`local-path.md`](local-path.md)
-(node-local) and
+(node-local), [`dmcache.md`](dmcache.md) (Optane cache for `/mnt/raid1`) and
 [`../adr/0002-stateful-services-on-tower.md`](../adr/0002-stateful-services-on-tower.md).
 
 ## Phases
