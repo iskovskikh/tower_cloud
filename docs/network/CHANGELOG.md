@@ -40,6 +40,12 @@ One entry per recon session or infrastructure change. Newest first.
 - **Keenetic:** `wan_to_lan` forwarding added (main LAN → server/cluster) and my
   SSH key added to `/etc/dropbear/authorized_keys`. Still hand-configured (no
   Ansible role — see `open_questions`).
+- **Keenetic DNS rebind + WG (follow-ups):** dnsmasq's rebind protection was
+  dropping the private-IP answers for `auth.metoda.cc`/`*.k8s.lan` forwarded from
+  the main router (`possible DNS-rebind attack detected`) → added `rebind_domain`
+  for `k8s.lan` and `metoda.cc`. The WireGuard tunnel to `adminvps` dropped when
+  the main router's network was restarted; a `wg0` bounce on the Keenetic
+  restored the handshake.
 
 ## 2026-10-15 — Keycloak issuer hostname `auth.metoda.cc` + split-horizon DNS
 

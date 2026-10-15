@@ -256,7 +256,9 @@ hosts:
       node MACs (.101-.104). The cluster was offline before this: the nodes had
       no DHCP pool (see CHANGELOG). Also a `wan_to_lan` forwarding rule so the
       main LAN — which routes the server/cluster subnets to this router — can
-      reach them. SSH key added to `/etc/dropbear/authorized_keys`.
+      reach them. SSH key added to `/etc/dropbear/authorized_keys`. `rebind_domain`
+      set for `k8s.lan` + `metoda.cc` (rebind protection was dropping the
+      private-IP answers forwarded from the main router).
       Configured in place (no Ansible role yet — see open_questions).
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
