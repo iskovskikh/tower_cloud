@@ -4,6 +4,28 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-15 — OpenCloud login blocked: missing CSP for the external IdP
+
+- **Symptom:** `https://cloud.metoda.cc` login failed in the browser —
+  `oidc-client-ts` "Connecting to
+  'https://auth.metoda.cc/realms/tower/.well-known/openid-configuration'
+  violates the following Content Security Policy directive: connect-src 'self'
+  blob: …", so the OIDC discovery fetch was refused and sign-in never started.
+- **Root cause:** OpenCloud serves a **built-in default CSP** that only allows
+  `connect-src 'self'` (plus the app-store/update hosts). An external IdP is a
+  different origin, so its discovery/token endpoints must be explicitly allowed.
+  The upstream compose deployment ships `config/opencloud/csp.yaml` and sets
+  `PROXY_CSP_CONFIG_FILE_LOCATION`; our Deployment set neither, so the default
+  was served and `auth.metoda.cc` was not in `connect-src`/`frame-src`.
+- **Fix:** new `k8s/apps/opencloud/configmap-csp.yaml` (mirrors the upstream
+  `csp.yaml`, trimmed to the services we run, IdP origin from
+  `${IDP_DOMAIN|auth.metoda.cc}`); `deployment.yaml` gains
+  `PROXY_CSP_CONFIG_FILE_LOCATION=/etc/opencloud/csp.yaml` and mounts the
+  ConfigMap key `csp.yaml` over that path.
+- **Status:** codified in git. `k8s/` is Flux-synced from `master`, so the
+  ConfigMap + Deployment apply on push (a `flux reconcile` / rollout restart
+  picks it up). Files: `k8s/apps/opencloud/{configmap-csp,deployment}.yaml`.
+
 ## 2026-10-15 — Power-loss recovery: Keenetic WAN moved off .216, blackholing the server segment
 
 - **Symptom:** after a facility power loss everything behind the Keenetic was

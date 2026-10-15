@@ -122,6 +122,11 @@ spec:
             # Serve Keycloak's .well-known/openid-configuration on the base URL.
             - name: PROXY_OIDC_REWRITE_WELLKNOWN
               value: "true"
+            # External IdP origins must be listed in the CSP (connect-src etc.);
+            # the built-in default does not include them and the browser blocks
+            # the OIDC discovery fetch. See configmap-csp.yaml.
+            - name: PROXY_CSP_CONFIG_FILE_LOCATION
+              value: /etc/opencloud/csp.yaml
             # Verify access tokens as JWTs against Keycloak's signing keys.
             - name: PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD
               value: "jwt"
@@ -197,6 +202,9 @@ spec:
               mountPath: /etc/opencloud
             - name: data
               mountPath: /var/lib/opencloud
+            - name: csp
+              mountPath: /etc/opencloud/csp.yaml
+              subPath: csp.yaml
           readinessProbe:
             httpGet:
               path: /
@@ -222,3 +230,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: opencloud-data
+        - name: csp
+          configMap:
+            name: opencloud-csp

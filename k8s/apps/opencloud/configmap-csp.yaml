@@ -1,0 +1,68 @@
+# OpenCloud Content Security Policy.
+#
+# OpenCloud serves a built-in default CSP that only allows `connect-src 'self'`.
+# With an EXTERNAL OIDC IdP (Keycloak, issuer auth.metoda.cc) the browser's
+# oidc-client-ts fetches https://auth.metoda.cc/realms/tower/.well-known/...,
+# which the default CSP blocks ("Refused to connect ... violates connect-src").
+# The upstream compose deployment therefore ships this file and points
+# PROXY_CSP_CONFIG_FILE_LOCATION at it (see deployment.yaml). The IdP origin
+# must appear in connect-src (discovery/token fetch), frame-src (silent
+# refresh iframe) and script-src.
+#
+# ${IDP_DOMAIN} is expanded by OpenCloud from the container environment
+# (IDP_DOMAIN=auth.metoda.cc in deployment.yaml); the value after `|` is the
+# default. Mirrors opencloud-compose config/opencloud/csp.yaml, trimmed to the
+# services this stack actually runs (no Collabora / Companion / Euro-Office).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opencloud-csp
+  namespace: opencloud
+data:
+  csp.yaml: |
+    directives:
+      child-src:
+        - "'self'"
+      connect-src:
+        - "'self'"
+        - "blob:"
+        - "https://${IDP_DOMAIN|auth.metoda.cc}/"
+        - "https://raw.githubusercontent.com/opencloud-eu/awesome-apps/"
+        - "https://update.opencloud.eu/"
+        - "https://tile.openstreetmap.org/"
+      default-src:
+        - "'none'"
+      font-src:
+        - "'self'"
+      frame-ancestors:
+        - "'self'"
+      frame-src:
+        - "'self'"
+        - "blob:"
+        - "https://embed.diagrams.net/"
+        - "https://docs.opencloud.eu"
+        - "https://${IDP_DOMAIN|auth.metoda.cc}/"
+      img-src:
+        - "'self'"
+        - "data:"
+        - "blob:"
+        - "https://raw.githubusercontent.com/opencloud-eu/awesome-apps/"
+        - "https://tile.openstreetmap.org/"
+      manifest-src:
+        - "'self'"
+      media-src:
+        - "'self'"
+      object-src:
+        - "'self'"
+        - "blob:"
+      script-src:
+        - "'self'"
+        - "'unsafe-inline'"
+        - "https://${IDP_DOMAIN|auth.metoda.cc}/"
+      style-src:
+        - "'self'"
+        - "'unsafe-inline'"
+        - "blob:"
+      worker-src:
+        - "'self'"
+        - "blob:"

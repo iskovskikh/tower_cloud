@@ -188,6 +188,13 @@ client and the server-segment router.
 
 ## Done log
 
+- 2026-10-15 — **OpenCloud login fix: CSP for the external IdP.** The browser
+  blocked the OIDC discovery fetch to `auth.metoda.cc` because OpenCloud's
+  built-in default CSP only allows `connect-src 'self'`. Added
+  `k8s/apps/opencloud/configmap-csp.yaml` (upstream `csp.yaml`, IdP origin via
+  `${IDP_DOMAIN|auth.metoda.cc}`) and pointed
+  `PROXY_CSP_CONFIG_FILE_LOCATION=/etc/opencloud/csp.yaml` at it, mounting the
+  ConfigMap key there. See `docs/network/CHANGELOG.md`.
 - 2026-10-15 — **OpenCloud SSO via Keycloak (external OIDC IdP).** OpenCloud now
   authenticates against Keycloak (realm `tower`, issuer `auth.metoda.cc`) instead
   of its built-in IDP: `OC_EXCLUDE_RUN_SERVICES=idp` (the built-in **IDM/LDAP is
