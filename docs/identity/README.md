@@ -68,8 +68,9 @@ Roles/scopes/clients are upserted (only the managed fields are compared, so
 Keycloak-generated ids/secrets are left alone). A user password is only set when
 the user is **first created** (with `temporary: true`, so Keycloak forces a
 change on first login) — a password the user later chooses is never overwritten.
-Currently declared: `aiskovskikh` (roles `user` + `opencloudAdmin`, group
-`/users`).
+Currently declared: `aiskovskikh` (roles `user` + `opencloudAdmin`),
+`niskovskikh` and `viskovskikh` (role `opencloudUser`, group `/users`, mirroring
+the hand-created user `diskovskikh`).
 
 ## Protect a service with SSO (forward-auth)
 

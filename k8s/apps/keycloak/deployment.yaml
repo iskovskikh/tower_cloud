@@ -90,6 +90,16 @@ spec:
                 secretKeyRef:
                   name: keycloak-secrets
                   key: aiskovskikh-password
+            - name: KEYCLOAK_NISKOVSKIKH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: niskovskikh-password
+            - name: KEYCLOAK_VISKOVSKIKH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: viskovskikh-password
             - name: JAVA_OPTS_APPEND
               value: -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20
           volumeMounts:

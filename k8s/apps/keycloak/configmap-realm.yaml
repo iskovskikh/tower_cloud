@@ -271,6 +271,48 @@ data:
             "user",
             "opencloudAdmin"
           ]
+        },
+        {
+          "username": "niskovskikh",
+          "enabled": true,
+          "email": "niskovskikh@metoda.cc",
+          "emailVerified": false,
+          "firstName": "N",
+          "lastName": "Isk",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "${KEYCLOAK_NISKOVSKIKH_PASSWORD}",
+              "temporary": true
+            }
+          ],
+          "groups": [
+            "/users"
+          ],
+          "realmRoles": [
+            "opencloudUser"
+          ]
+        },
+        {
+          "username": "viskovskikh",
+          "enabled": true,
+          "email": "viskovskikh@metoda.cc",
+          "emailVerified": false,
+          "firstName": "V",
+          "lastName": "Isk",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "${KEYCLOAK_VISKOVSKIKH_PASSWORD}",
+              "temporary": true
+            }
+          ],
+          "groups": [
+            "/users"
+          ],
+          "realmRoles": [
+            "opencloudUser"
+          ]
         }
       ]
     }

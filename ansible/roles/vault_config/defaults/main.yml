@@ -31,6 +31,8 @@ vault_app_secrets:
       demo_user: andrey                # fixed (realm test user)
       demo_user_password: null         # generated
       aiskovskikh_password: null       # generated (realm tower user aiskovskikh)
+      niskovskikh_password: null       # generated (realm tower user niskovskikh)
+      viskovskikh_password: null       # generated (realm tower user viskovskikh)
 
 # --- Vault OIDC auth against Keycloak (realm "tower") ----------------------
 # Disabled by default: enable after Keycloak is up and the realm is imported:

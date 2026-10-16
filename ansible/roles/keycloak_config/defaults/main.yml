@@ -142,3 +142,23 @@ keycloak_users:
     realm_roles: ["user", "opencloudAdmin"]
     password_secret_key: aiskovskikh-password
     temporary: true
+  - username: niskovskikh
+    email: niskovskikh@metoda.cc
+    first_name: N
+    last_name: Isk
+    enabled: true
+    email_verified: false
+    groups: ["/users"]
+    realm_roles: ["opencloudUser"]
+    password_secret_key: niskovskikh-password
+    temporary: true
+  - username: viskovskikh
+    email: viskovskikh@metoda.cc
+    first_name: V
+    last_name: Isk
+    enabled: true
+    email_verified: false
+    groups: ["/users"]
+    realm_roles: ["opencloudUser"]
+    password_secret_key: viskovskikh-password
+    temporary: true
