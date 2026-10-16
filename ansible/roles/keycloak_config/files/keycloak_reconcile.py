@@ -297,9 +297,14 @@ for user in USERS:
     created = False
     if not found:
         payload = {"username": username, "enabled": user.get("enabled", True)}
-        for src, dst in (("email", "email"), ("firstName", "firstName"), ("lastName", "lastName")):
-            if user.get(src):
-                payload[dst] = user[src]
+        if user.get("email"):
+            payload["email"] = user["email"]
+        first_name = user.get("first_name") or user.get("firstName")
+        last_name = user.get("last_name") or user.get("lastName")
+        if first_name:
+            payload["firstName"] = first_name
+        if last_name:
+            payload["lastName"] = last_name
         if user.get("email_verified", user.get("emailVerified", True)):
             payload["emailVerified"] = True
         status, resp = call("POST", f"/admin/realms/{REALM}/users", token, body=payload)
