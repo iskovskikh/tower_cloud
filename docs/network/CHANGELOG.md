@@ -4,6 +4,65 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-19 — `metoda.cc` moved to Timeweb Cloud; DNS restored and codified (ADR-0005)
+
+- **Transfer check:** `GET /api/v1/domains` now returns `metoda.cc` (zone id
+  `25051187-metoda.cc`, `provider: PDR`, `paid` until **2027-10-15**, auto-renew
+  on) — previously `total: 0`/`404`. API reads and writes work; an empty
+  `POST .../dns-records` returns `400 validation`, not `403`.
+- **Gap found:** the old hosting-panel `A` records did **not** transfer. The
+  zone held only the Timeweb default MX×2 + SPF TXT (plus an empty wildcard TXT
+  and an empty wildcard MX). Public resolvers (`1.1.1.1`, `8.8.8.8`,
+  authoritative Timeweb NS) returned nothing for apex, `www`, `cloud`, `auth`
+  and `*`, so external access was broken. Locally the router's split-horizon
+  answers (`10.10.120.x`) masked it. `adminvps` itself was healthy: `cloud` 200,
+  `auth` 302, LE cert `cloud.metoda.cc` valid to **2027-01-13**.
+- **Change:** added **`tofu/dns`** (provider
+  `tf.timeweb.cloud/timeweb-cloud/timeweb-cloud` v1.8.3; `data.twc_dns_zone` +
+  `twc_dns_rr`) with five `A` records — `@`, `www`, `cloud`, `auth`, `*` →
+  `78.17.99.16`. `tofu apply` created all five; a follow-up `tofu plan` reports
+  no drift. Default MX/SPF are intentionally left unmanaged.
+- **Cleanup:** deleted the transfer leftovers (empty wildcard TXT, empty
+  wildcard MX) and the per-subdomain SPF TXT records that the API auto-created
+  when the subdomains were added.
+- **Verified:** after Timeweb's multi-NS propagation, `1.1.1.1`, `8.8.8.8` and
+  `9.9.9.9` resolve all five names to `78.17.99.16`;
+  `https://cloud.metoda.cc` → `200`, `https://auth.metoda.cc` → `302` to
+  `/admin/` through `adminvps` with the Let's Encrypt certificate.
+- **Docs:** ADR-0004 marked superseded; new ADR-0005; `inventory.yaml` and
+  `docs/network/README.md` updated.
+- **Observation:** `GET /api/v1/account/status` still says `is_blocked: true`,
+  but domain/DNS writes succeed — revisit if API calls begin to fail.
+- **Follow-ups:** LAN clients still get the internal `tower-cloud-ca`
+  certificate via split-horizon (expected). Consider DNS-01 + wildcard now that
+  the zone is API-managed.
+
+---
+
+## 2026-10-16 — tower: stale nginx transmission vhost removed; k8s + services verified healthy
+
+- **Change (tower nginx):** the legacy vhost `/etc/nginx/sites-enabled/transmission.conf`
+  was removed (symlink deleted; `/etc/nginx/sites-available/transmission.conf` kept
+  as backup) and nginx reloaded. The vhost proxied to `127.0.0.1:9091`, which was
+  removed when Transmission migrated to k8s on 2026-10-13 — any request to
+  `transmission.tower.local` returned `502`. Requests now fall through to the
+  intentional catch-all `tower.conf` (`server_name _; return 444;`), which also
+  explains the recon probe `tower nginx :80 -> 000` (empty reply is by design, not
+  a fault). Legacy nginx sites on tower are **not** managed by Ansible (the
+  `tower_storage` role covers only nfs/iscsi/garage/postgres/dmcache).
+- **Recon (read-only):** all services up. k8s cluster `k8s-node-1..4` (10.10.120.101-104)
+  all `Ready` (v1.37.1, control-plane on node-1) — contradicting the older
+  "cluster currently down" note in AGENTS.md; system pods (calico, coredns,
+  etcd/apiserver, csi-nfs, cert-manager, external-secrets, ingress-nginx, flux)
+  all `Running`; apps jellyfin (node-4), transmission (node-2), keycloak `Running`;
+  Flux `flux-system` reconciled `master@8e6d5e3`. tower storage `md0` RAID1 `[UU]`
+  healthy behind dm-cache (writethrough), `/mnt/raid1` 2.4/3.6 TB (71%);
+  docker `postgres`+`garage` up.
+- **Follow-up:** tower's nginx sites are unmanaged hand-config — consider adding
+  them to IaC (or dropping nginx there entirely) so they cannot drift.
+
+---
+
 ## 2026-10-15 — tower: Intel Optane SSD added as a dm-cache for /mnt/raid1
 
 - **Change:** an **Intel Optane Memory M10 (16 GB, `MEMPEK1J016GAL`)** was

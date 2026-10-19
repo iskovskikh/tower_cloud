@@ -1,6 +1,6 @@
 # ADR-0004: DNS + TLS for `metoda.cc` (manual zone, HTTP-01)
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0005 (2026-10-19) — the domain moved to Timeweb Cloud, the API now sees the zone, and records are codified.
 - **Date:** 2026-10-15
 - **Deciders:** owner + agent
 
@@ -67,3 +67,10 @@ exists for the panel that hosts the zone.
   that changes rarely.
 - **Do nothing / parking** — rejected: the front end (Traefik) needs working
   names and certificates.
+
+## Superseded (2026-10-19)
+
+The "if the zone is later moved to Timeweb Cloud" condition happened: the domain
+was transferred to Timeweb Cloud and `GET /api/v1/domains` now returns it. The
+manual-zone exception no longer applies; DNS is managed as code in `tofu/dns`.
+TLS remains HTTP-01 for now. See **ADR-0005**.

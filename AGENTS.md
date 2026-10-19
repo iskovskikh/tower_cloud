@@ -28,7 +28,7 @@ these agents. The **Keenetic Omni 2** router is an offline spare.
 | Path | Purpose |
 |---|---|
 | `docs/` | topology, inventory, changelog, ADRs |
-| `tofu/` | provisioning — OpenTofu (proxmox VMs) |
+| `tofu/` | provisioning — OpenTofu (`proxmox` VMs, `dns` for metoda.cc) |
 | `ansible/` | host config — tower storage, router, k8s install |
 | `k8s/` | GitOps (Flux) — storage, secrets (Vault+ESO), apps |
 | `scripts/` | helper scripts (`recon.sh`, …) |
@@ -57,6 +57,7 @@ ssh tower                                     # tower.lan → 192.168.30.200
 ssh arch@192.168.30.201                       # proxmox
 
 tofu -chdir=tofu/proxmox plan                 # provisioning (needs API token)
+TF_VAR_twc_token="$TWC_TOKEN" tofu -chdir=tofu/dns plan   # metoda.cc DNS (ADR-0005)
 ansible-playbook ansible/playbooks/site.yml   # configure hosts
 flux reconcile kustomization flux-system      # GitOps (once bootstrapped)
 ```

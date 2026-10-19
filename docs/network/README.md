@@ -59,12 +59,11 @@ External data path (front end **live**; domain **`metoda.cc`**):
 ingress-nginx (VLAN120) → k8s apps`.
 
 **DNS:** `metoda.cc` is delegated to Timeweb's nameservers (`ns1/2.timeweb.ru`,
-`ns3/4.timeweb.org`) and managed **by hand** in the Timeweb hosting panel
-(`hosting.timeweb.ru/domains`) — the Timeweb Cloud API does not see the zone, so
-the records are a documented exception to IaC (ADR-0004). Planned `A` records
-`cloud.` / `auth.` / `*.` — and the apex + `www` — → `adminvps` (`78.17.99.16`);
-the old registrar parking `A` was replaced. TLS via Let's Encrypt **HTTP-01**
-(Traefik on `adminvps:80`; no wildcard certificate).
+`ns3/4.timeweb.org`). Since 2026-10-19 the zone is visible to the Timeweb Cloud
+API (zone id `25051187-metoda.cc`) and its `A` records are managed as code in
+`tofu/dns` (ADR-0005): `cloud.` / `auth.` / `*.` — plus the apex and `www` — →
+`adminvps` (`78.17.99.16`). TLS via Let's Encrypt **HTTP-01** (Traefik on
+`adminvps:80`; no wildcard certificate yet).
 
 ## Subnets
 
@@ -154,8 +153,8 @@ that populate `inventory.yaml` so the file can be kept honest.
 See `open_questions:` in [`inventory.yaml`](inventory.yaml). Highlights:
 
 1. **`metoda.cc`** — A records `cloud` / `auth` / `*` (plus apex and `www`) are
-   live, pointing at `adminvps`; set by hand in `hosting.timeweb.ru/domains` (the
-   Timeweb Cloud API can't see the zone). The old parking A/AAAA were removed.
+   live, pointing at `adminvps`, and managed as code in `tofu/dns` (ADR-0005).
+   Consider DNS-01 + a wildcard certificate now that the zone is API-managed.
 2. Publish/secure the public apps: Keycloak's `KC_HOSTNAME` is now
    `https://auth.metoda.cc` and split-horizon DNS is codified in `router_openwrt`
    (dnsmasq answers `auth.metoda.cc` with the ingress-nginx node IPs) — **not yet

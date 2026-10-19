@@ -11,40 +11,41 @@ meta:
   secrets: none stored here — credentials live outside the repo
 
 domains:
-  # Public DNS for external access. Registered AND hosted at Timeweb; the zone
-  # is managed by hand in the hosting panel (hosting.timeweb.ru/domains). The
-  # domain is NOT visible to the Timeweb Cloud API (GET /api/v1/domains -> 0),
-  # so this is a documented exception to IaC — see ADR-0004. Keep this file in
-  # sync by hand after any panel change.
+  # Public DNS for external access. Registered AND hosted at Timeweb; since
+  # 2026-10-19 the zone is visible to the Timeweb Cloud API (zone id
+  # 25051187-metoda.cc) and its A records are managed as code in tofu/dns.
   - id: metoda.cc
     role: external-access
     registrar: Timeweb
     registered: "2026-10-15"
     price_rub: {registration: 1930, renewal: 2030}
     dns:
-      hosting: "Timeweb hosting panel (hosting.timeweb.ru/domains)"
+      hosting: "Timeweb Cloud (API; zone id 25051187-metoda.cc)"
       nameservers: [ns1.timeweb.ru, ns2.timeweb.ru, ns3.timeweb.org, ns4.timeweb.org]
-      delegated: true   # verified 2026-10-15 (dig NS @1.1.1.1)
-      iac: none         # manual — Timeweb Cloud API does not see the zone (ADR-0004)
-      acme: "Let's Encrypt HTTP-01 (Traefik on adminvps :80; no DNS API, no wildcard cert)"
+      delegated: true   # verified 2026-10-15 and 2026-10-19 (dig NS @1.1.1.1)
+      iac: "tofu/dns (data.twc_dns_zone + twc_dns_rr; ADR-0005)"
+      acme: "Let's Encrypt HTTP-01 (Traefik on adminvps :80); DNS-01/wildcard now possible but not enabled"
     records:
-      # All set by hand in the panel; added 2026-10-15, verified with dig @1.1.1.1.
+      # A records are managed by tofu/dns; applied 2026-10-19 and verified with
+      # dig @1.1.1.1 and @8.8.8.8. MX/SPF below are Timeweb defaults, not in tofu.
       - {name: cloud, type: A, value: 78.17.99.16, role: OpenCloud, status: present}
       - {name: auth,  type: A, value: 78.17.99.16, role: "Keycloak (public); split-horizon internally -> ingress-nginx", status: present}
       - {name: "*",   type: A, value: 78.17.99.16, role: "wildcard (routing only; TLS is per-host)", status: present}
-      - {name: "@",   type: A, value: 78.17.99.16, role: "apex — replaced the parking A 92.53.96.201", status: present}
-      - {name: www,   type: A, value: 78.17.99.16, role: "www — replaced the parking A 92.53.96.201", status: present}
-      - {name: "@",   type: TXT, value: "v=spf1 include:_spf.timeweb.ru ~all", role: "default SPF (Timeweb)", status: present}
+      - {name: "@",   type: A, value: 78.17.99.16, role: "apex", status: present}
+      - {name: www,   type: A, value: 78.17.99.16, role: "www", status: present}
+      - {name: "@",   type: MX, value: "10 mx1.timeweb.ru / 20 mx2.timeweb.ru", role: "Timeweb default mail (unmanaged)", status: present}
+      - {name: "@",   type: TXT, value: "v=spf1 include:_spf.timeweb.ru ~all", role: "default SPF (Timeweb, unmanaged)", status: present}
       # apex/www AAAA (registrar IPv6 parking 2a03:6f00:1::5c35:60c9) removed 2026-10-15.
     notes: >
       Chosen external domain (replaces the earlier towercloud.dev / towercloud.ru
       candidates). Front: Traefik + Let's Encrypt on adminvps (78.17.99.16) —
       **live 2026-10-15** (certs for cloud./auth. via HTTP-01) — publishing
-      cloud. / auth. over the WireGuard tunnel — see ADR-0003/0004.
-      DNS is managed manually in the Timeweb hosting panel: the Timeweb Cloud API
-      returns no domains for this account, so records cannot be codified. TLS via
-      HTTP-01 (no wildcard certificate). cloud./auth./* plus the apex and www all
-      point at adminvps; the old parking A (92.53.96.201) and AAAA are gone.
+      cloud. / auth. over the WireGuard tunnel — see ADR-0003/0004/0005.
+      After the 2026-10-19 move to Timeweb Cloud only the default MX/SPF records
+      remained; the previous hosting-panel A records were gone, so they were
+      recreated via the API/`tofu/dns` and verified publicly. TLS remains
+      HTTP-01 (no wildcard certificate yet). The old parking A (92.53.96.201)
+      and AAAA are gone.
 
 subnets:
   - id: lan
@@ -380,7 +381,7 @@ kubernetes:
     the WireGuard tunnel (ingress, nodes, API :6443).
 
 open_questions:
-  - "metoda.cc: add A records `cloud`/`auth`/`*` -> 78.17.99.16 BY HAND in hosting.timeweb.ru/domains (Timeweb Cloud API cannot see the zone); apex stays on parking."
+  - "metoda.cc: DNS is now IaC (`tofu/dns`, ADR-0005). Consider switching Traefik to DNS-01 + a wildcard certificate now that the Timeweb Cloud API manages the zone."
   - "Keycloak OIDC on the public host: KC_HOSTNAME=https://auth.metoda.cc + split-horizon DNS (router dnsmasq) + oauth2-proxy/Vault issuer URLs codified and applied; verify public login end-to-end. Which services are public vs VPN-only?"
   - "No Ansible role yet for the Keenetic Omni II (OpenWrt server router) — it now carries the VLAN120 DHCP pool, routes, the wan->lan forwarding and split-horizon peering, all configured by hand. Manage it by IaC, and how?"
   - "Why does archasus hold two IPv4 leases (.204 and .205) on one NIC?"
