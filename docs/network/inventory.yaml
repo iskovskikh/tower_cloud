@@ -182,6 +182,7 @@ hosts:
     disabled_services:
       - "MiniDLNA (8200) — stopped + disabled 2026-10-13"
       - "Jellyfin (8096) — Docker container stopped 2026-10-13; migrated to k8s (ns media, jellyfin.k8s.lan)"
+      - "nginx vhost transmission.conf — removed from sites-enabled 2026-10-16 (backend :9091 gone; migrated to k8s). nginx :80 catch-all tower.conf returns 444 (intentional)."
     removed_services:
       - "MinIO (9000/9001) — container+image+data removed 2026-10-12"
       - "SMB (139/445) — samba uninstalled 2026-10-12"
