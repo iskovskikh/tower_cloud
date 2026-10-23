@@ -1,0 +1,22 @@
+# The OIDC issuer (auth.metoda.cc) is served by ingress-nginx with the internal
+# tower-ca certificate. Secrets are namespace-scoped, so request a throwaway
+# certificate from the same CA: its `ca.crt` is the root we need for the
+# container trust bundle. The leaf itself is unused.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hermes-tower-ca
+  namespace: hermes
+spec:
+  commonName: hermes-tower-ca
+  secretName: hermes-tower-ca
+  dnsNames:
+    - hermes-tower-ca.hermes.svc.cluster.local
+  duration: 87600h
+  renewBefore: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: tower-ca
+    kind: ClusterIssuer

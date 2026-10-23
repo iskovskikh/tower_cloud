@@ -1,0 +1,42 @@
+# Dashboard runs its own OIDC gate (Keycloak realm "tower", client "hermes"),
+# so no oauth2-proxy forward-auth here. The annotations keep the embedded chat
+# WebSocket (/api/pty, /api/ws) and long-running agent traffic alive.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hermes
+  namespace: hermes
+  annotations:
+    cert-manager.io/cluster-issuer: tower-ca
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - hermes.k8s.lan
+        - hermes.metoda.cc
+      secretName: hermes-tls
+  rules:
+    - host: hermes.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hermes
+                port:
+                  number: 9119
+    - host: hermes.metoda.cc
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hermes
+                port:
+                  number: 9119

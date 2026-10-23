@@ -1,0 +1,122 @@
+# Hermes Agent: gateway + dashboard in one container. The image's s6 tree runs
+# the dashboard as a supervised service alongside the container's main program
+# (`gateway run`), so both share one PID namespace and one /opt/data volume.
+# Running them as two containers hides the gateway PID from the dashboard and
+# makes its status page report the gateway as stopped.
+#
+# The dashboard binds 0.0.0.0, so Hermes' auth gate is active; it is satisfied
+# by the Keycloak OIDC provider in configmap.yaml. Ingress TLS is terminated by
+# ingress-nginx (tower-ca).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes
+  namespace: hermes
+  labels:
+    app: hermes
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hermes
+  template:
+    metadata:
+      labels:
+        app: hermes
+    spec:
+      # The image's s6 stage2 hook chowns /opt/data for the internal hermes
+      # user (UID 10000), so no fsGroup is needed on the hostPath-backed PV.
+      initContainers:
+        # Merge the distro CA store with the internal tower-ca so both public
+        # provider APIs (DeepSeek) and Keycloak OIDC discovery verify.
+        - name: ca-bundle
+          image: nousresearch/hermes-agent:v0.22.5
+          command:
+            - /bin/sh
+            - -c
+            - cat /etc/ssl/certs/ca-certificates.crt /tower-ca/ca.crt > /ca-bundle/ca-certificates.crt
+          volumeMounts:
+            - name: tower-ca
+              mountPath: /tower-ca
+              readOnly: true
+            - name: ca-bundle
+              mountPath: /ca-bundle
+      containers:
+        - name: hermes
+          image: nousresearch/hermes-agent:v0.22.5
+          # Keep the image ENTRYPOINT (s6 + dispatch); k8s `command` would
+          # replace it and try to exec `gateway` directly.
+          args: ["gateway", "run"]
+          ports:
+            - name: http
+              containerPort: 9119
+          env:
+            - name: TZ
+              value: "Europe/Moscow"
+            # s6 starts the dashboard service from the same container.
+            - name: HERMES_DASHBOARD
+              value: "1"
+            - name: HERMES_DASHBOARD_HOST
+              value: "0.0.0.0"
+            - name: HERMES_DASHBOARD_PORT
+              value: "9119"
+            - name: SSL_CERT_FILE
+              value: /ca-bundle/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /ca-bundle/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /ca-bundle/ca-certificates.crt
+            # Telegram is unreachable from the home ISP; egress via the
+            # adminvps danted SOCKS proxy over WireGuard (role adminvps_danted).
+            - name: TELEGRAM_PROXY
+              value: "socks5://10.200.0.1:1080"
+          envFrom:
+            - secretRef:
+                name: hermes-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: config
+              mountPath: /opt/data/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: ca-bundle
+              mountPath: /ca-bundle
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hermes-data
+        - name: config
+          configMap:
+            name: hermes-config
+        - name: tower-ca
+          secret:
+            secretName: hermes-tower-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: ca-bundle
+          emptyDir: {}

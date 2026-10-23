@@ -1,0 +1,14 @@
+# Hermes home: SQLite session DB, memory, skills, browser state and generated
+# .env. SQLite + POSIX locking means node-local storage (tower-local), not NFS.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-data
+  namespace: hermes
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: tower-local
+  resources:
+    requests:
+      storage: 10Gi
