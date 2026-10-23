@@ -18,7 +18,7 @@ data:
 
     model:
       provider: deepseek
-      default: deepseek-chat
+      default: deepseek-flash
 
     gateway:
       # One bot, several profiles. Match order: user_id > thread_id > chat_id.
