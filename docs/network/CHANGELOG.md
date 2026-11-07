@@ -4,6 +4,24 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-07 — OpenCloud config declarative (ConfigMap + Vault, no init)
+
+- **Changed:** `k8s/apps/opencloud/` no longer runs `opencloud init` and no
+  longer has the `opencloud-config` PVC. The previously generated
+  `/etc/opencloud/opencloud.yaml` is now the `opencloud-yaml` ConfigMap with
+  `${OCCFG_*}` placeholders; the values come from Vault `secret/opencloud`
+  through the `opencloud-secrets` ExternalSecret (`envFrom`). Non-secret values
+  and the installation IDs (system/admin user id, `graph.application.id`,
+  mount ids, `service_account_id`) are pinned in git.
+- **Trade-off:** the pinned IDs and IDM bind passwords belong to this
+  installation's embedded IDM and the `opencloud-data` LUN. Do not reuse this
+  config after wiping/rebuilding that LUN without re-running `opencloud init`.
+- **Migration order:** load the 12 `OCCFG_*` secrets into Vault **before**
+  applying (they were read from the old config PVC); otherwise the placeholders
+  expand empty and the pod fails.
+
+---
+
 ## 2026-10-19 — `metoda.cc` moved to Timeweb Cloud; DNS restored and codified (ADR-0005)
 
 - **Transfer check:** `GET /api/v1/domains` now returns `metoda.cc` (zone id

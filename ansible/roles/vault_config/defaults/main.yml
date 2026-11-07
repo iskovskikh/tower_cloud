@@ -33,6 +33,26 @@ vault_app_secrets:
       aiskovskikh_password: null       # generated (realm tower user aiskovskikh)
       niskovskikh_password: null       # generated (realm tower user niskovskikh)
       viskovskikh_password: null       # generated (realm tower user viskovskikh)
+  # OpenCloud opencloud.yaml secrets (${OCCFG_*} placeholders in the ConfigMap).
+  # For a FRESH install these are generated here and the embedded IDM bootstraps
+  # with them. For the EXISTING install, import the current values from the old
+  # /etc/opencloud/opencloud.yaml BEFORE this role runs: the bind passwords must
+  # match the IDM already on the opencloud-data LUN. Once present, `kv patch`
+  # leaves them untouched.
+  - path: opencloud
+    keys:
+      jwt_secret: null
+      machine_auth_api_key: null
+      system_user_api_key: null
+      transfer_secret: null
+      url_signing_secret: null
+      idm_bind_password: null
+      service_account_secret: null
+      idp_bind_password: null
+      admin_password: null
+      reva_bind_password: null
+      wopi_secret: null
+      thumbnail_transfer_secret: null
 
 # --- Vault OIDC auth against Keycloak (realm "tower") ----------------------
 # Disabled by default: enable after Keycloak is up and the realm is imported:

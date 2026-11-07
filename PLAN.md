@@ -135,7 +135,9 @@ _Updated: 2026-10-15_
       Vault `secret/opencloud`). Storage is **`decomposeds3`**: user **blobs go
       to Garage S3** (bucket `opencloud`); metadata + the embedded IDM stay on a
       tower iSCSI LUN (lun 5, 500 GiB **sparse** — floats) because POSIX+xattrs
-      can't be served over this NFS. `/etc/opencloud` on a small `tower-nfs` PVC.
+      can't be served over this NFS. `/etc/opencloud/opencloud.yaml` is the
+      `opencloud-yaml` ConfigMap (secrets from Vault, `${OCCFG_*}` substitution);
+      no `opencloud init`, no config PVC.
       Verified end-to-end (WebDAV upload → 1 object in Garage, round-trip OK);
       ingress `curl --cacert tower-ca` → 200. **SSO**: federated to Keycloak
       (realm `tower`, issuer `auth.metoda.cc`) as an external OIDC IdP —
@@ -287,7 +289,8 @@ client and the server-segment router.
   (new bucket `opencloud` + key, creds in Vault `secret/opencloud`), while
   metadata + embedded IDM remain on the block LUN. Verified end-to-end via a
   temporary basic-auth WebDAV PUT → 1 object appeared in Garage, round-trip OK.
-  `/etc/opencloud` stays on a small `tower-nfs` PVC.
+  `/etc/opencloud/opencloud.yaml` is the `opencloud-yaml` ConfigMap (secrets
+  from Vault via `${OCCFG_*}`); no `opencloud init`, no config PVC.
   LUN added to `ansible/roles/tower_storage`. Verified: pod Ready, Ingress
   serves 200 (root + OIDC discovery), cert valid under `tower-ca`. Keycloak
   federation is a follow-up. Manifests `k8s/apps/opencloud/`.

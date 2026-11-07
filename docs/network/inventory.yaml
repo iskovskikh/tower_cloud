@@ -366,7 +366,9 @@ kubernetes:
     Garage S3** (bucket `opencloud`; Garage runs on tower, :3900); metadata + the
     embedded IDM on a dedicated
     tower iSCSI LUN (`opencloud`, lun 5, ext4, **sparse** → floats; POSIX+xattr
-    can't be NFS); `/etc/opencloud` on a small `tower-nfs` PVC. Serves its own
+    can't be NFS); `/etc/opencloud/opencloud.yaml` from the `opencloud-yaml`
+    ConfigMap (secrets from Vault via `${OCCFG_*}`; no init, no config PVC).
+    Serves its own
     login (built-in IDM/IDP) → not behind oauth2-proxy. Verified end-to-end
     (WebDAV upload → object landed in Garage).
     **Memory (2026-10-13):** proxmox has only 16 GB, so 4×4 GB over-commits.
