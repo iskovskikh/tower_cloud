@@ -150,6 +150,9 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/opencloud
+            - name: opencloud-config
+              mountPath: /etc/opencloud/opencloud.yaml
+              subPath: opencloud.yaml
             - name: data
               mountPath: /var/lib/opencloud
             - name: csp
@@ -174,7 +177,12 @@ spec:
             limits:
               memory: 2Gi
       volumes:
+        # A writable parent dir; the config files are mounted as subPath files.
+        # Mounting a ConfigMap at /etc/opencloud and then a subPath file over it
+        # fails in containerd ("not a directory", MS_REC on a file bind).
         - name: config
+          emptyDir: {}
+        - name: opencloud-config
           configMap:
             name: opencloud-yaml
         - name: data
