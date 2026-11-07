@@ -1,0 +1,5 @@
+---
+- name: restart danted
+  ansible.builtin.systemd:
+    name: danted
+    state: restarted

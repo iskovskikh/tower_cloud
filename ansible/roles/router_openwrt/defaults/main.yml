@@ -73,6 +73,13 @@ router_openwrt_dns_addresses:
   - "/cloud.metoda.cc/10.10.120.102"
   - "/cloud.metoda.cc/10.10.120.103"
   - "/cloud.metoda.cc/10.10.120.104"
+  # Hermes dashboard uses the public name as its OIDC public_url/callback, so
+  # LAN browsers must reach it directly at ingress-nginx (publicly Timeweb
+  # answers hermes.metoda.cc -> adminvps -> Traefik).
+  - "/hermes.metoda.cc/10.10.120.101"
+  - "/hermes.metoda.cc/10.10.120.102"
+  - "/hermes.metoda.cc/10.10.120.103"
+  - "/hermes.metoda.cc/10.10.120.104"
 
 # --- DHCP reservations (dnsmasq) --------------------------------------------
 # `section` is the uci section name; `mac`/`ip` pin the lease. The Keenetic

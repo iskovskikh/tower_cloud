@@ -22,6 +22,114 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-10-23 — Hermes published at `hermes.metoda.cc`
+
+- **DNS:** added `hermes` A → `78.17.99.16` in `tofu/dns` (record
+  `95011463`); public resolver returns it. Router split-horizon
+  (`router_openwrt`) now answers `hermes.metoda.cc` with the four
+  ingress-nginx node IPs so LAN clients hit the cluster directly.
+- **Public TLS/routing:** `adminvps_traefik_hosts` includes
+  `hermes.metoda.cc`; Traefik issued a Let's Encrypt cert and proxies to
+  ingress-nginx over WireGuard. UFW already allows 80/443.
+- **Kubernetes:** Ingress `hermes` lists both `hermes.k8s.lan` and
+  `hermes.metoda.cc`; the `hermes-tls` cert has both SANs (tower-ca on the
+  back end, LE on the public edge).
+- **OIDC:** Hermes `dashboard.public_url` is now
+  `https://hermes.metoda.cc`; the Keycloak client `hermes` allows callbacks on
+  both names. The authorization redirect carries
+  `redirect_uri=https://hermes.metoda.cc/auth/callback`, and Keycloak serves
+  the login page (no invalid-redirect error).
+- **Verified:** public `dig` → adminvps; `dig` via router → 10.10.120.x;
+  `https://hermes.metoda.cc` → 302 `/auth/login` (LE cert `CN=hermes.metoda.cc`
+  to 2027-01-21); `/api/status` `overall: ok`, Telegram `connected`.
+- **Note:** `hermes.k8s.lan` still serves the UI, but OAuth always returns to
+  the canonical `hermes.metoda.cc` callback.
+- **Follow-ups:** commit/push so Flux owns the manifests; rotate the Telegram
+  bot token (printed during setup).
+
+---
+
+## 2026-10-23 — Hermes Agent deployed; adminvps SOCKS egress for Telegram
+
+- **Added:** `k8s/apps/hermes/` — namespace, `hermes-data` PVC (`tower-local`,
+  10 Gi), ExternalSecret from Vault `secret/hermes`, one Deployment running
+  `gateway run` (Telegram) with the image's s6 tree also supervising the
+  dashboard in the same container, Service, Ingress `https://hermes.k8s.lan`,
+  and a throwaway `Certificate` whose `ca.crt` extends the container trust
+  bundle with `tower-ca`.
+- **Applied:** `kubectl apply -f k8s/apps/hermes/`; Keycloak client
+  reconciled with `ansible-playbook playbooks/keycloak.yml` (changed once).
+  Pod is 1/1 Running; `/api/status` reports `overall: ok`,
+  `gateway_running: true`, Telegram `connected`.
+- **Auth:** dashboard binds `0.0.0.0`, so Hermes' gate is mandatory. It uses
+  the built-in self-hosted OIDC provider against Keycloak realm `tower`
+  (public PKCE client `hermes`, callback `/auth/callback`) instead of
+  oauth2-proxy forward-auth. `dashboard.trusted_proxies` lists the four node
+  IPs so `X-Forwarded-Proto` yields Secure cookies.
+- **Keycloak:** added the `hermes` client to both the bootstrap realm ConfigMap
+  and `ansible/roles/keycloak_config` (admin-API reconciliation).
+- **Secrets:** Vault `secret/hermes` has `deepseek_api_key`,
+  `telegram_bot_token`, `telegram_allowed_users` (currently only
+  `2043981105` / @aiskovskikh). Values are not in git.
+- **Model:** `deepseek-chat` (provider `deepseek`) in `configmap.yaml`;
+  `_config_version: 51` pinned so the read-only ConfigMap mount is not
+  migrated/written on boot.
+- **Telegram egress:** the home ISP blocks every Telegram API IP. Added
+  `ansible/roles/adminvps_danted` (wired into `playbooks/adminvps.yml`, tag
+  `danted`): danted also listens on `10.200.0.1:1080`, UFW allows
+  `10.10.120.0/24`, and SOCKS without auth is allowed only for the WireGuard
+  and k8s node networks; the catch-all rule keeps password auth. Gateway uses
+  `TELEGRAM_PROXY=socks5://10.200.0.1:1080`.
+- **Verify:** `danted -f /etc/danted.conf -V` passes; SOCKS5 CONNECT from the
+  pod to `api.telegram.org:443` completes TLSv1.3; dashboard
+  `/auth/login?provider=self-hosted` redirects to the Keycloak authorization
+  endpoint with PKCE and the registered callback; `kubectl apply
+  --dry-run=client` and Ansible syntax checks pass.
+- **Follow-ups:** add @iskovskikh's numeric ID (he must message
+  @metodacc_bot), commit/push the manifests so Flux owns them, and **rotate
+  the Telegram bot token** (it was printed during setup) + update Vault.
+
+---
+
+## 2026-10-23 — external-exposure audit; `adminvps_hardening` applied
+
+- **Scope:** read-only audit of the only internet-facing host (`adminvps`,
+  `78.17.99.16`) from `archasus`, plus Shodan InternetDB and check-host.net.
+  The home network is behind CGNAT and not directly reachable.
+- **Public surface found:** TCP `22` (SSH), `80`/`443` (Traefik LE, only
+  `cloud.`/`auth.` routed; unknown hosts 404 with the default Traefik cert),
+  `2096`/`12267` (x-ui subscription/panel), `36243` (Xray VLESS Reality);
+  UDP `443` (Hysteria) and `51820` (WireGuard). `danted :1080` listens on
+  `0.0.0.0` but was filtered from three external vantage points.
+- **Risks:** SSH still allows passwords and root (`PermitRootLogin yes`); `arch`
+  has `NOPASSWD: ALL`; fail2ban is absent; ~6.3k failed SSH logins/day (~56k in
+  7 days, ~18k for root). UFW is inactive and `iptables INPUT` is `ACCEPT`, so
+  any new `0.0.0.0` listener would be public. x-ui panel is plain HTTP (random
+  path/user, bcrypt password). Keycloak admin console is public and the realm
+  config has no brute-force protection. `apt` reports 171 upgradable packages
+  (no security tag) and the host needs a reboot.
+- **Change (code + applied):** added `ansible/roles/adminvps_hardening` and
+  wired it into `ansible/playbooks/adminvps.yml` (tags `hardening`). Applied on
+  2026-10-23: key-only SSH (drop-in `00-adminvps-hardening.conf`, effective
+  `sshd -T` assertions), default-deny UFW (`22/80/443/36243` tcp, `443/51820`
+  udp public; `1080/2096/12267` only from WireGuard `10.200.0.0/24`), and
+  fail2ban for sshd banning via UFW.
+- **Verified after apply:** UFW active with default deny incoming; external scan
+  from `archasus` shows `22/80/443/36243` open and `1080/2096/12267` blocked;
+  `cloud.metoda.cc` 200, `auth.metoda.cc` 302, HTTP→HTTPS 301; WireGuard
+  handshake fresh; password-auth probe returns `Permission denied (publickey)`;
+  fail2ban sshd active and had already banned 3 IPs. A second role run reported
+  `changed=0` (idempotent).
+- **Follow-ups:** decide whether x-ui subscription `2096` must remain public
+  (static client configs are unaffected); enable Keycloak brute-force detection
+  + MFA or restrict `/admin`; patch/reboot (171 packages, reboot required);
+  consider closing `NOPASSWD: ALL` on `arch`; consider removing the unused
+  wildcard DNS record. Rotate secrets if the audit transcript was retained.
+- **Verify:** `ansible-playbook playbooks/adminvps.yml --syntax-check` passes;
+  `--tags hardening` re-run is idempotent.
+
+---
+
 ## 2026-10-19 — `metoda.cc` moved to Timeweb Cloud; DNS restored and codified (ADR-0005)
 
 - **Transfer check:** `GET /api/v1/domains` now returns `metoda.cc` (zone id

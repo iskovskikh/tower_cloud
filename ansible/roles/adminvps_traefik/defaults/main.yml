@@ -17,6 +17,7 @@ adminvps_traefik_acme_email: "iskovskikh@gmail.com"
 adminvps_traefik_hosts:
   - cloud.metoda.cc   # OpenCloud
   - auth.metoda.cc    # Keycloak
+  - hermes.metoda.cc  # Hermes Agent dashboard
 
 # ingress-nginx runs as a hostNetwork DaemonSet on every k8s node, so any node
 # is an entry point. Traefik reaches them over the WireGuard tunnel and

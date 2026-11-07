@@ -12,8 +12,9 @@ locals {
   a_records = {
     "@"     = "apex"
     "www"   = "www"
-    "cloud" = "OpenCloud"
-    "auth"  = "Keycloak"
+    "cloud"  = "OpenCloud"
+    "auth"   = "Keycloak"
+    "hermes" = "Hermes Agent"
     "*"     = "wildcard routing"
   }
 }

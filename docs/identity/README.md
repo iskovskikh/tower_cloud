@@ -16,6 +16,10 @@ and backed by `tower` storage.
 - **OpenCloud** — file sync/share/collab (`https://cloud.metoda.cc`) federated to
   Keycloak as an **external OIDC IdP**: its `idp` service is disabled, the built-in
   IDM/LDAP stays and stores autoprovisioned users. See below.
+- **Hermes Agent** — `https://hermes.k8s.lan` (ns `hermes`) runs its own OIDC
+  login against realm `tower` (public PKCE client `hermes`, callback
+  `/auth/callback`), not oauth2-proxy forward-auth. Its pod trusts `tower-ca`
+  for the `auth.metoda.cc` discovery request via a merged CA bundle.
 - **Secrets** — never in git: generated in Vault at `secret/keycloak`, rendered
   by ESO into `keycloak/keycloak-secrets` and
   `oauth2-proxy/oauth2-proxy-secrets`.
@@ -68,9 +72,10 @@ Roles/scopes/clients are upserted (only the managed fields are compared, so
 Keycloak-generated ids/secrets are left alone). A user password is only set when
 the user is **first created** (with `temporary: true`, so Keycloak forces a
 change on first login) — a password the user later chooses is never overwritten.
-Currently declared: `aiskovskikh` (roles `user` + `opencloudAdmin`),
-`niskovskikh` and `viskovskikh` (role `opencloudUser`, group `/users`, mirroring
-the hand-created user `diskovskikh`).
+Currently declared: OIDC clients `hermes`, `web`, `OpenCloudDesktop`,
+`OpenCloudAndroid`, `OpenCloudIOS`; users `aiskovskikh` (roles `user` +
+`opencloudAdmin`), `niskovskikh` and `viskovskikh` (role `opencloudUser`, group
+`/users`, mirroring the hand-created user `diskovskikh`).
 
 ## Protect a service with SSO (forward-auth)
 

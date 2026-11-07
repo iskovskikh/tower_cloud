@@ -1,0 +1,159 @@
+---
+# adminvps_hardening — key-only SSH, default-deny UFW, fail2ban.
+# See defaults/main.yml for the public allowlist and the WireGuard-only ports.
+
+- name: Install hardening packages
+  ansible.builtin.apt:
+    name:
+      - ufw
+      - fail2ban
+      - python3-systemd
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Refuse a port that is both public and WireGuard-only
+  ansible.builtin.assert:
+    that:
+      - (adminvps_hardening_public_tcp_ports | intersect(adminvps_hardening_wg_only_tcp_ports)) | length == 0
+    fail_msg: >-
+      A port is listed in both adminvps_hardening_public_tcp_ports and
+      adminvps_hardening_wg_only_tcp_ports; the public allow rule would win.
+
+- name: Check the admin user's authorized_keys before disabling passwords
+  ansible.builtin.stat:
+    path: "/home/{{ adminvps_hardening_ssh_key_user }}/.ssh/authorized_keys"
+  register: adminvps_hardening_admin_keys
+  when: not adminvps_hardening_password_authentication | bool
+
+- name: Refuse to disable password authentication without a usable key
+  ansible.builtin.assert:
+    that:
+      - adminvps_hardening_admin_keys.stat.exists
+      - adminvps_hardening_admin_keys.stat.size > 0
+    fail_msg: >-
+      No non-empty authorized_keys for {{ adminvps_hardening_ssh_key_user }};
+      refusing to disable password authentication (lockout protection).
+  when: not adminvps_hardening_password_authentication | bool
+
+# 00- prefix: sshd uses the first value it sees, and cloud-init may install a
+# 50-cloud-init.conf that enables PasswordAuthentication again.
+- name: Install the SSH hardening drop-in
+  ansible.builtin.template:
+    src: sshd_hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-adminvps-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart ssh
+
+- name: Validate the complete sshd configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -t
+  changed_when: false
+
+- name: Read the effective sshd configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -T
+  register: adminvps_hardening_sshd_effective
+  changed_when: false
+
+- name: Assert the effective SSH policy
+  ansible.builtin.assert:
+    that:
+      - "'pubkeyauthentication yes' in adminvps_hardening_sshd_effective.stdout"
+      - "'permitemptypasswords no' in adminvps_hardening_sshd_effective.stdout"
+      - >-
+        (adminvps_hardening_password_authentication | bool and
+         'passwordauthentication yes' in adminvps_hardening_sshd_effective.stdout) or
+        (not adminvps_hardening_password_authentication | bool and
+         'passwordauthentication no' in adminvps_hardening_sshd_effective.stdout)
+      - >-
+        ('permitrootlogin ' ~ adminvps_hardening_permit_root_login)
+        in adminvps_hardening_sshd_effective.stdout or
+        (adminvps_hardening_permit_root_login == 'prohibit-password' and
+         'permitrootlogin without-password' in adminvps_hardening_sshd_effective.stdout)
+    fail_msg: >-
+      Effective sshd settings differ from the role; check other files in
+      /etc/ssh/sshd_config.d/ (first value wins). Not restarting ssh.
+  when: not ansible_check_mode
+
+- name: Install the fail2ban jail
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.d/99-adminvps.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart fail2ban
+  when: adminvps_hardening_fail2ban_enabled | bool
+
+- name: Validate the fail2ban configuration
+  ansible.builtin.command:
+    cmd: fail2ban-client -t
+  changed_when: false
+  when: adminvps_hardening_fail2ban_enabled | bool
+
+- name: Ensure fail2ban is enabled and running
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: true
+    state: started
+  when: adminvps_hardening_fail2ban_enabled | bool
+
+- name: Ensure UFW manages IPv6
+  ansible.builtin.lineinfile:
+    path: /etc/default/ufw
+    regexp: '^IPV6='
+    line: "IPV6=yes"
+
+- name: Set the default incoming policy to deny
+  community.general.ufw:
+    default: deny
+    direction: incoming
+
+- name: Set the default outgoing policy to allow
+  community.general.ufw:
+    default: allow
+    direction: outgoing
+
+# Allow SSH before enabling UFW, otherwise the enable task can cut the
+# connection that Ansible is using.
+- name: Allow SSH from the internet
+  community.general.ufw:
+    rule: allow
+    port: "{{ adminvps_hardening_ssh_port | string }}"
+    proto: tcp
+    comment: ssh
+
+- name: Allow the public TCP services
+  community.general.ufw:
+    rule: allow
+    port: "{{ item | string }}"
+    proto: tcp
+    comment: public-tcp
+  loop: "{{ adminvps_hardening_public_tcp_ports }}"
+
+- name: Allow the public UDP services
+  community.general.ufw:
+    rule: allow
+    port: "{{ item | string }}"
+    proto: udp
+    comment: public-udp
+  loop: "{{ adminvps_hardening_public_udp_ports }}"
+
+# Admin/control ports (danted, x-ui) remain on 0.0.0.0 but are only reachable
+# through WireGuard; loopback still works for ssh -L tunnels.
+- name: Allow admin ports only from the WireGuard network
+  community.general.ufw:
+    rule: allow
+    port: "{{ item | string }}"
+    proto: tcp
+    from_ip: "{{ adminvps_hardening_wg_cidr }}"
+    comment: wireguard-admin
+  loop: "{{ adminvps_hardening_wg_only_tcp_ports }}"
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+    logging: low

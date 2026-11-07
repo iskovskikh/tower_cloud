@@ -3,4 +3,9 @@
   hosts: adminvps
   become: true
   roles:
-    - adminvps_traefik
+    - role: adminvps_hardening
+      tags: [hardening]
+    - role: adminvps_danted
+      tags: [danted]
+    - role: adminvps_traefik
+      tags: [traefik]

@@ -1,0 +1,12 @@
+# Managed by Ansible (role adminvps_hardening) — do not edit by hand.
+[DEFAULT]
+backend = systemd
+banaction = ufw
+bantime = {{ adminvps_hardening_fail2ban_bantime }}
+findtime = {{ adminvps_hardening_fail2ban_findtime }}
+maxretry = {{ adminvps_hardening_fail2ban_maxretry }}
+ignoreip = {{ adminvps_hardening_fail2ban_ignoreip | join(' ') }}
+
+[sshd]
+enabled = true
+mode = aggressive

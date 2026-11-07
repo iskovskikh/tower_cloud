@@ -62,6 +62,22 @@ keycloak_opencloud_default_scopes: ["opencloud-roles", "web-origins", "profile",
 keycloak_opencloud_optional_scopes: ["address", "phone", "offline_access", "microprofile-jwt"]
 
 keycloak_clients:
+  - clientId: hermes
+    name: Hermes Agent Dashboard
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    redirectUris:
+      - "https://hermes.k8s.lan/auth/callback"
+      - "https://hermes.metoda.cc/auth/callback"
+    webOrigins:
+      - "https://hermes.k8s.lan"
+      - "https://hermes.metoda.cc"
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "+"
   - clientId: web
     name: OpenCloud Web App
     enabled: true

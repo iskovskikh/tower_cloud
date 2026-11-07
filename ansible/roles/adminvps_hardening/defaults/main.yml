@@ -1,0 +1,65 @@
+---
+# adminvps_hardening — reduce the public attack surface of the VPS.
+#
+# The VPS is the only host reachable from the internet (the home network is
+# behind CGNAT and reached through WireGuard). This role:
+#   * restricts SSH to key authentication (no root password, no passwords);
+#   * installs a default-deny UFW policy with an explicit public allowlist;
+#   * makes the admin/proxy control ports reachable only from the WireGuard
+#     network (danted, x-ui panel/subscription);
+#   * runs fail2ban for sshd, banning with UFW.
+#
+# It intentionally does NOT change x-ui/danted/hysteria configuration. Their
+# daemons still listen on 0.0.0.0; the firewall is what moves them behind the
+# tunnel. Use WireGuard or an SSH tunnel (`ssh -L`) to reach the x-ui panel.
+#
+# Before applying, keep at least one working SSH key for the admin user.
+#
+# This role only adds UFW rules; it does not delete pre-existing allow rules.
+# On adminvps UFW was inactive and ruleless at the 2026-10-23 audit.
+#
+# Docker: Traefik uses host networking, so its :80/:443 are covered by the UFW
+# INPUT rules. Published container ports bypass UFW; if such containers are
+# added later, restrict them in DOCKER-USER/nftables as well.
+
+# Reachable from the internet. Keep in sync with actually offered services.
+# SSH is allowed separately from adminvps_hardening_ssh_port, so the port can
+# be changed without leaving 22 open.
+adminvps_hardening_public_tcp_ports:
+  - 80      # Traefik ACME HTTP-01 + redirect to 443
+  - 443     # Traefik (cloud./auth.metoda.cc)
+  - 36243   # Xray VLESS Reality proxy endpoint
+adminvps_hardening_public_udp_ports:
+  - 443     # Hysteria 2
+  - 51820   # WireGuard server
+
+# Admin/control ports that stay reachable only from the WireGuard network.
+#   1080  danted SOCKS (currently filtered by the provider, but do not rely on it)
+#   2096  x-ui subscription endpoint
+#   12267 x-ui web panel (plain HTTP; use WG or an SSH tunnel)
+# Remove 2096 here if clients fetch subscription URLs from the public internet;
+# static client configurations keep working either way.
+adminvps_hardening_wg_cidr: 10.200.0.0/24
+adminvps_hardening_wg_only_tcp_ports:
+  - 1080
+  - 2096
+  - 12267
+
+# SSH policy. `prohibit-password` still allows root with a key; set to `no` if
+# root should never log in directly (arch has passwordless sudo today).
+adminvps_hardening_ssh_port: 22
+adminvps_hardening_permit_root_login: prohibit-password
+adminvps_hardening_password_authentication: false
+adminvps_hardening_ssh_key_user: arch
+adminvps_hardening_max_auth_tries: 4
+adminvps_hardening_login_grace_time: 30
+
+# fail2ban. `banaction: ufw` adds temporary UFW deny rules for offenders.
+adminvps_hardening_fail2ban_enabled: true
+adminvps_hardening_fail2ban_bantime: 24h
+adminvps_hardening_fail2ban_findtime: 1h
+adminvps_hardening_fail2ban_maxretry: 5
+adminvps_hardening_fail2ban_ignoreip:
+  - 127.0.0.1/8
+  - "::1"
+  - "{{ adminvps_hardening_wg_cidr }}"

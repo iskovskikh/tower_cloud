@@ -1,0 +1,11 @@
+# Managed by Ansible (role adminvps_hardening) — do not edit by hand.
+# 00- prefix so this wins over cloud-init's 50-cloud-init.conf (first value wins).
+Port {{ adminvps_hardening_ssh_port }}
+PermitRootLogin {{ adminvps_hardening_permit_root_login }}
+PasswordAuthentication {{ 'yes' if adminvps_hardening_password_authentication | bool else 'no' }}
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+MaxAuthTries {{ adminvps_hardening_max_auth_tries }}
+LoginGraceTime {{ adminvps_hardening_login_grace_time }}
+X11Forwarding no

@@ -99,9 +99,18 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 ## Services
 
 ### adminvps — `78.17.99.16` (public)
-- `22` ssh · `1080` danted SOCKS · `443/udp` hysteria · `51820/udp` WireGuard
+- `22` ssh (key-only since 2026-10-23) · `443/udp` hysteria ·
+  `51820/udp` WireGuard
+- `1080` danted SOCKS · `2096` x-ui subscription · `12267` x-ui panel (plain
+  HTTP, random path) — **WireGuard-only** since 2026-10-23
+- `36243` Xray VLESS Reality (public proxy endpoint)
 - `80`/`443` tcp **Traefik** (Let's Encrypt HTTP-01, Docker Compose) — fronts
-  `cloud.` / `auth.` → home ingress-nginx over WireGuard
+  `cloud.` / `auth.` / `hermes.` → home ingress-nginx over WireGuard
+- **2026-10-23 audit + hardening:** `adminvps` is the only public host. Role
+  `adminvps_hardening` applied: key-only SSH (`PasswordAuthentication no`,
+  `PermitRootLogin prohibit-password`), default-deny UFW with public
+  `22/80/443/36243 tcp` + `443/51820 udp`, fail2ban for sshd, and
+  `1080/2096/12267` only from `10.200.0.0/24`. See CHANGELOG.
 
 ### keenetic-omni-2 — `192.168.30.1` (OpenWrt 23.05.3)
 - `22` dropbear · `80`/`443` LuCI
@@ -118,7 +127,8 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 ### k8s cluster — `10.10.120.101-104` (VLAN 120)
 - `*.k8s.lan` via ingress-nginx on all nodes — e.g. `https://jellyfin.k8s.lan`,
   `https://opencloud.k8s.lan`, `https://vault.k8s.lan`; Keycloak's canonical host
-  is the public `auth.metoda.cc` (split-horizon → ingress-nginx internally)
+  is the public `auth.metoda.cc` (split-horizon → ingress-nginx internally);
+  Hermes is public at `https://hermes.metoda.cc`
 - Reachable from `adminvps` over the WireGuard tunnel (ingress, nodes, API `:6443`)
 
 ### router — `192.168.1.1`
@@ -152,7 +162,7 @@ that populate `inventory.yaml` so the file can be kept honest.
 
 See `open_questions:` in [`inventory.yaml`](inventory.yaml). Highlights:
 
-1. **`metoda.cc`** — A records `cloud` / `auth` / `*` (plus apex and `www`) are
+1. **`metoda.cc`** — A records `cloud` / `auth` / `hermes` / `*` (plus apex and `www`) are
    live, pointing at `adminvps`, and managed as code in `tofu/dns` (ADR-0005).
    Consider DNS-01 + a wildcard certificate now that the zone is API-managed.
 2. Publish/secure the public apps: Keycloak's `KC_HOSTNAME` is now

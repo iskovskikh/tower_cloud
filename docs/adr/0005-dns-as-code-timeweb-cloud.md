@@ -17,7 +17,7 @@ the default Timeweb records remained (two MX, one SPF TXT, plus two empty
 leftovers). Public resolvers returned non-existent answers for the apex, `www`,
 `cloud`, `auth` and the wildcard, so external access was broken even though the
 `adminvps` front end and its certificates were healthy. The router's
-split-horizon DNS (`cloud`/`auth` → ingress node IPs) masked the problem on the
+split-horizon DNS (`cloud`/`auth`/`hermes` → ingress node IPs) masked the problem on the
 LAN.
 
 The official Terraform provider (`tf.timeweb.cloud/timeweb-cloud/timeweb-cloud`)
@@ -27,7 +27,7 @@ IaC exception can be removed.
 ## Decision
 
 1. Manage the `metoda.cc` zone **as code** in [`tofu/dns`](../../tofu/dns):
-   five `A` records (`@`, `www`, `cloud`, `auth`, `*`) →
+   six `A` records (`@`, `www`, `cloud`, `auth`, `hermes`, `*`) →
    `78.17.99.16` (`adminvps`).
 2. Leave the Timeweb default **MX** (`mx1/mx2.timeweb.ru`) and **SPF** records
    unmanaged; they are not part of external access.

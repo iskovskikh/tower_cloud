@@ -1,0 +1,72 @@
+---
+- name: adminvps_danted | require the existing danted config
+  ansible.builtin.stat:
+    path: /etc/danted.conf
+  register: adminvps_danted_conf
+
+- name: adminvps_danted | fail when danted is not installed
+  ansible.builtin.assert:
+    that: adminvps_danted_conf.stat.exists
+    fail_msg: "danted is not installed on adminvps"
+
+# Multiple `internal:` lines make danted listen on the WireGuard address in
+# addition to the public interface. UFW still limits :1080 to WG/cluster.
+- name: adminvps_danted | listen on the WireGuard address
+  ansible.builtin.lineinfile:
+    path: /etc/danted.conf
+    regexp: '^internal:\s+{{ adminvps_danted_wg_ip }}\s+port\s*=\s*1080\s*$'
+    line: "internal: {{ adminvps_danted_wg_ip }} port = 1080"
+    insertafter: '^internal:'
+    backup: true
+  notify: restart danted
+
+# `none` must be part of the global method list before a rule can select it.
+# The default catch-all rule below keeps password auth explicitly.
+- name: adminvps_danted | allow per-rule method selection
+  ansible.builtin.lineinfile:
+    path: /etc/danted.conf
+    regexp: '^socksmethod:\s+username\s*$'
+    line: "socksmethod: username none"
+    backup: true
+  notify: restart danted
+
+- name: adminvps_danted | allow cluster and WG networks without auth
+  ansible.builtin.blockinfile:
+    path: /etc/danted.conf
+    marker: "# {mark} ANSIBLE MANAGED: hermes cluster egress"
+    insertbefore: '^client pass \{'
+    block: |
+      socks pass {
+          from: {{ adminvps_danted_wg_cidr }} to: 0.0.0.0/0
+          socksmethod: none
+          command: connect
+      }
+      socks pass {
+          from: {{ adminvps_danted_cluster_cidr }} to: 0.0.0.0/0
+          socksmethod: none
+          command: connect
+      }
+    backup: true
+  notify: restart danted
+
+# Keep the original catch-all password rule for every other client.
+- name: adminvps_danted | keep password auth on the catch-all rule
+  ansible.builtin.lineinfile:
+    path: /etc/danted.conf
+    insertbefore: '^    command: connect bind udpassociate$'
+    line: "    socksmethod: username"
+    backup: true
+  notify: restart danted
+
+- name: adminvps_danted | validate the rendered config
+  ansible.builtin.command:
+    cmd: danted -f /etc/danted.conf -V
+  changed_when: false
+
+- name: adminvps_danted | allow the cluster network to reach danted
+  community.general.ufw:
+    rule: allow
+    port: "1080"
+    proto: tcp
+    from: "{{ adminvps_danted_cluster_cidr }}"
+    comment: hermes-egress
