@@ -4,6 +4,18 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-07 — OpenCloud space «Общее» quota raised to 500 GB
+
+- **Change:** the project space «Общее» (drive
+  `18e7c45f-…$d8fc1c47-…`) quota was raised from 1 GB to 500 GB via
+  `PATCH /graph/v1.0/drives/{id}` with `quota.total=500000000000` bytes.
+  Used at the time: ~973 MB (0.19%), state `normal`.
+- **How:** short-lived `opencloud auth-app create` token + Basic auth (the
+  OIDC password grant failed with stale stored credentials). This is runtime
+  app data, not an IaC resource.
+
+---
+
 ## 2026-11-07 — OpenCloud config declarative (ConfigMap + Vault, no init)
 
 - **Changed:** `k8s/apps/opencloud/` no longer runs `opencloud init` and no
