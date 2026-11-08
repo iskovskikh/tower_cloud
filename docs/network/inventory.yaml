@@ -338,7 +338,7 @@ kubernetes:
   nodes:
     - {id: k8s-node-1, ip: 10.10.120.101, role: control-plane, vmid: 101, vcpu: 2, mem_mb: 4096, disk_gb: 40}
     - {id: k8s-node-2, ip: 10.10.120.102, role: worker, vmid: 102, vcpu: 2, mem_mb: 3072, disk_gb: 40}
-    - {id: k8s-node-3, ip: 10.10.120.103, role: worker, vmid: 103, vcpu: 2, mem_mb: 3072, disk_gb: 40}
+    - {id: k8s-node-3, ip: 10.10.120.103, role: worker, vmid: 103, vcpu: 2, mem_mb: 4096, disk_gb: 40}
     - {id: k8s-node-4, ip: 10.10.120.104, role: worker, vmid: 104, vcpu: 2, mem_mb: 3072, disk_gb: 40}
   notes: >
     Four Ubuntu 22.04 VMs on proxmox, VLAN 120 (DHCP from the Keenetic `dhcp.k8s`,
@@ -418,7 +418,10 @@ kubernetes:
     Vault `secret/gitlab`; Ansible needs the matching `GITLAB_*` env vars.
     Node disks were expanded 22 → 40 GiB (proxmox local-lvm) because image
     pulls + GitLab filled the old disks and triggered kubelet
-    DiskPressure/evictions.
+    DiskPressure/evictions. k8s-node-3 was also raised 3072 → 4096 MiB after a
+    global OOM (webservice + toolbox + system pods on a 3 GiB worker); the
+    webservice limit is capped at 1536 MiB. `gitlab.metoda.cc/aiskovskikh`
+    verified 200 after the fix.
     **Memory (2026-10-13):** proxmox has only 16 GB, so 4×4 GB over-commits.
     Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
     balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and

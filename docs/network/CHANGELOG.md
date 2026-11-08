@@ -4,6 +4,25 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-08 — GitLab worker OOM fixed (502 on `gitlab.metoda.cc`)
+
+- **Symptom:** `https://gitlab.metoda.cc/aiskovskikh` returned 502 (LAN and
+  public). `k8s-node-3` was `NotReady` (`Kubelet stopped posting node status`)
+  and the `gitlab-webservice-default` Endpoints list was empty.
+- **Cause:** node3 had only 3 GiB and hosted webservice + toolbox + exporter +
+  shell + ingress-nginx + Calico/Flux. A global OOM killed Calico/logger
+  processes, the kubelet began thrashing (load >100) and could not post status.
+- **Fix:** node3 raised to 4 GiB on proxmox (`qm set 103 -memory 4096
+  -balloon 4096`; `qm reboot` failed, so `qm reset`), stale `Unknown` pods
+  deleted. Webservice container capped at 1536 MiB (was 2 GiB), toolbox at
+  512 MiB. Node3 now has ~1.5 GiB free.
+- **Verified:** webservice 2/2, Endpoints populated, HelmRelease `Ready`,
+  `/-/readiness` ok, `/aiskovskikh` returns 200.
+- **Note:** node3's 4 GiB is a hand change; inventory now records
+  `mem_mb: 4096` for node3. The proxmox tofu stack is still a placeholder.
+
+---
+
 ## 2026-11-08 — GitLab CE deployed at `gitlab.metoda.cc`
 
 - **Deployed:** `k8s/apps/gitlab/` — GitLab CE 19.5.3 (Helm chart 10.5.4) in

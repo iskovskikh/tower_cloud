@@ -132,10 +132,10 @@ GitLab is the heaviest workload in it. The HelmRelease asks for roughly:
 
 | Component | request | limit |
 |---|---|---|
-| webservice | 300m / 1 GiB | 2 GiB |
+| webservice | 300m / 1 GiB | 1.5 GiB |
 | sidekiq | 500m / 1 GiB | 1.5 GiB |
 | gitaly | 100m / 512 MiB | 1 GiB |
-| toolbox | 50m / 350 MiB | 1 GiB |
+| toolbox | 50m / 350 MiB | 512 MiB |
 | migrations | 250m / 200 MiB | 1 GiB |
 
 If pods stay `Pending`, the nodes cannot satisfy the requests: lower sidekiq
@@ -157,6 +157,12 @@ limits. Watch `kubectl top`/`dmesg` for OOM kills on first boot.
   made Helm treat the release as stalled and uninstall it. The HelmRelease
   post-renderer sets the deadline to 3600 s, and webservice uses
   `strategy: Recreate` so upgrades do not need a second 1 GiB surge pod.
+- **Worker OOM (302 → 502).** k8s-node-3 (3 GiB) hosted the webservice, toolbox
+  and system pods; it hit a global OOM, the kubelet stopped posting status and
+  the Service had no endpoints (502 from ingress/Traefik). Recovery: raise
+  node3 to **4 GiB** (`qm set 103 -memory 4096 -balloon 4096`), hard-reset it,
+  delete the `Unknown` pods, and cap the webservice container at **1536 MiB**
+  (toolbox at 512 MiB). Node3 then had ~1.5 GiB free and the page returned 200.
 
 ## Follow-ups
 
