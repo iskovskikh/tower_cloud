@@ -302,6 +302,7 @@ hosts:
       - {port: 443, proto: udp, service: hysteria}
       - {port: 2096, proto: tcp, service: "x-ui subscription endpoint (UFW: WireGuard-only since 2026-10-23)"}
       - {port: 12267, proto: tcp, service: "x-ui web panel (plain HTTP, random path; UFW: WireGuard-only since 2026-10-23)"}
+      - {port: 30222, proto: tcp, service: "Traefik TCP -> GitLab SSH (gitlab-shell NodePort 30222 over WG)"}
       - {port: 36243, proto: tcp, service: "Xray VLESS Reality inbound (public proxy endpoint)"}
       - {port: 51820, proto: udp, service: "WireGuard server (home tunnel)"}
     security_audit_2026_10_23: >
@@ -412,16 +413,19 @@ kubernetes:
     object storage (artifacts, LFS, uploads, packages) is Garage S3 on tower
     (buckets created by `tower_storage`); only Gitaly keeps an RWO tower
     iSCSI LUN (`gitlab-gitaly`, lun 6, 50 GiB sparse). SSO via Keycloak realm
-    `tower`, client `gitlab`. Bundled cert-manager/nginx/Prometheus and the
-    registry, KAS, Pages and Runner are disabled. Manifests:
+    `tower`, client `gitlab`. SSH clone is on port **30222**
+    (`gitlab-gitlab-shell` NodePort; adminvps Traefik TCP 30222 -> nodes over
+    WG; port 22 is the node/admin sshd). Bundled cert-manager/nginx/Prometheus
+    and the registry, KAS, Pages and Runner are disabled. Manifests:
     `k8s/apps/gitlab/`; runbook: `docs/gitlab/README.md`. Secrets come from
     Vault `secret/gitlab`; Ansible needs the matching `GITLAB_*` env vars.
     Node disks were expanded 22 → 40 GiB (proxmox local-lvm) because image
     pulls + GitLab filled the old disks and triggered kubelet
     DiskPressure/evictions. k8s-node-3 was also raised 3072 → 4096 MiB after a
     global OOM (webservice + toolbox + system pods on a 3 GiB worker); the
-    webservice limit is capped at 1536 MiB. `gitlab.metoda.cc/aiskovskikh`
-    verified 200 after the fix.
+    webservice limit is 2 GiB and runs a single Puma worker (two workers and a
+    1536 MiB cap each caused cgroup OOMs/502s). `gitlab.metoda.cc` verified
+    200/302 after the fixes.
     **Memory (2026-10-13):** proxmox has only 16 GB, so 4×4 GB over-commits.
     Pinned: control-plane `balloon=4096` (fixed 4 GB), workers `memory=3072
     balloon=3072` (3 GB). Before this the balloon dropped guests to ~1.2 GB and

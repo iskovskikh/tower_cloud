@@ -4,6 +4,58 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-08 — GitLab blob page 502 fixed (webservice limit 2 GiB)
+
+- **Symptom:** `https://gitlab.metoda.cc/special_tools/sign_skill/-/blob/master/README.md?ref_type=heads`
+  returned 502 while other pages worked.
+- **Cause:** the webservice container (1536 MiB cap, one Puma worker) hit a
+  **memory cgroup OOM** serving the blob request; `dmesg` shows `ruby`/
+  `puma srv tp` killed with ~1.1 GiB anon-rss, `OOMKilled` exit 137, then the
+  readiness probe failed during restart.
+- **Fix:** webservice limit raised to **2 GiB** (request stays 1 GiB, one Puma
+  worker). Node3 has 4 GiB and keeps ~1 GiB free.
+- **Verified:** webservice 2/2 with 0 restarts, `/-/readiness` 200, blob URL
+  302 (redirect to sign-in when unauthenticated), no new OOM.
+
+---
+
+## 2026-11-08 — GitLab SSH enabled on port 30222
+
+- **Why:** `git@gitlab.metoda.cc` hit the node/admin sshd on :22 and returned
+  `Permission denied (publickey)`; GitLab Shell was not reachable.
+- **Change:** `gitlab-gitlab-shell` is now a **NodePort 30222** service;
+  `global.shell.port: 30222` makes GitLab advertise
+  `ssh://git@gitlab.metoda.cc:30222/...`. adminvps Traefik gained a TCP
+  entrypoint on :30222 forwarding to the four nodes over WireGuard, and UFW
+  allows public 30222/tcp. A `~/.ssh/config` entry on archasus maps
+  `gitlab.metoda.cc` to port 30222, so `git@gitlab.metoda.cc` works.
+- **Verified:** `ssh -T git@gitlab.metoda.cc` and
+  `ssh -p 30222 git@78.17.99.16` both return
+  `Welcome to GitLab, @aiskovskikh!`; `ssh-keyscan` shows the GitLab Shell host
+  key. Port 22 stays with the node/admin sshd.
+- **Note:** an intermediate ingress-nginx TCP approach was abandoned because
+  Flux reverted the uncommitted HelmRelease change; NodePort 30222 lives in the
+  manually applied GitLab HelmRelease and does not depend on a push.
+
+---
+
+## 2026-11-08 — GitLab webservice cgroup OOM fixed (502 on `/‑/profile/preferences`)
+
+- **Symptom:** a second 502, this time on
+  `https://gitlab.metoda.cc/-/profile/preferences`, while the rest of GitLab
+  answered.
+- **Cause:** the webservice container (cap 1536 MiB) ran **two Puma workers**;
+  `dmesg` showed a memory-cgroup OOM killing two `ruby` processes
+  (~0.9 GiB anon each). The kubelet restarted the container, so ingress had no
+  ready endpoint for the duration.
+- **Fix:** `gitlab.webservice.workerProcesses: 1` in the HelmRelease. One Puma
+  worker plus workhorse/logger stays under the 1536 MiB cap on the 4 GiB node.
+- **Verified:** HelmRelease `Ready` (revision v5), webservice 2/2 with 0
+  restarts, readiness 200, `/‑/profile/preferences` redirects (302) instead of
+  502, node3 ~1 GiB free, no new cgroup OOM.
+
+---
+
 ## 2026-11-08 — GitLab worker OOM fixed (502 on `gitlab.metoda.cc`)
 
 - **Symptom:** `https://gitlab.metoda.cc/aiskovskikh` returned 502 (LAN and

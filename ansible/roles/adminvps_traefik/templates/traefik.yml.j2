@@ -13,6 +13,9 @@ entryPoints:
           permanent: true
   websecure:
     address: ":443"
+  # GitLab SSH (gitlab-shell via NodePort 30222 on the k8s nodes).
+  gitlab-ssh:
+    address: ":30222"
 
 providers:
   file:

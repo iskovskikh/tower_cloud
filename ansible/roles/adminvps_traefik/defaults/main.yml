@@ -29,3 +29,13 @@ adminvps_traefik_ingress_servers:
   - https://10.10.120.102:443
   - https://10.10.120.103:443
   - https://10.10.120.104:443
+
+# GitLab SSH (gitlab-shell) is NodePort 30222 on every k8s node; Traefik exposes
+# it publicly on the same port 30222 (adminvps :22 belongs to the admin sshd).
+# Clone URLs are ssh://git@gitlab.metoda.cc:30222/... (or Port 30222 in
+# ~/.ssh/config).
+adminvps_traefik_gitlab_ssh_servers:
+  - 10.10.120.101:30222
+  - 10.10.120.102:30222
+  - 10.10.120.103:30222
+  - 10.10.120.104:30222

@@ -118,6 +118,12 @@ spec:
           secret: gitlab-secrets
           key: redis-password
 
+      # SSH clone URL/port. adminvps :22 is the admin sshd and LAN :22 is the
+      # node sshd, so GitLab SSH uses the dedicated NodePort 30222; LAN clients
+      # hit the node directly, public clients go through adminvps Traefik :30222.
+      shell:
+        port: 30222
+
       initialRootPassword:
         secret: gitlab-secrets
         key: initial-root-password
@@ -176,9 +182,18 @@ spec:
       install: false
 
     gitlab:
+      gitlab-shell:
+        service:
+          # NodePort on every node; the GitLab clone URL uses this port (see
+          # global.shell.port), and adminvps Traefik forwards public :30222.
+          type: NodePort
+          nodePort: 30222
       webservice:
         minReplicas: 1
         maxReplicas: 1
+        # One Puma worker: two workers exceeded the container's memory limit
+        # on the 4 GiB worker node and caused a 502 (cgroup OOM + restart).
+        workerProcesses: 1
         # Recreate avoids needing surge capacity (another 1 GiB) on the small
         # workers during upgrades.
         deployment:
@@ -188,10 +203,10 @@ spec:
           requests:
             cpu: 300m
             memory: 1Gi
-          # Capped at 1.5 GiB: node3 (the webservice node) has 4 GiB total and
-          # also runs toolbox/exporter/shell + system pods.
+          # One Puma worker still peaked ~1.5 GiB and the cgroup OOM-killed it
+          # (502s); node3 has 4 GiB, so allow 2 GiB for webservice.
           limits:
-            memory: 1536Mi
+            memory: 2Gi
 
       sidekiq:
         concurrency: 10

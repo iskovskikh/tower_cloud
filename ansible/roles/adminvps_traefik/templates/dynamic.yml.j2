@@ -28,3 +28,20 @@ http:
       # ingress-nginx serves the internal `tower-ca` certificate; the tunnel is
       # already encrypted, so the back-end certificate is not verified.
       insecureSkipVerify: true
+
+# GitLab SSH: a single non-TLS TCP entry point (:2222) forwarded to the
+# gitlab-shell NodePort on the k8s nodes over WireGuard.
+tcp:
+  routers:
+    gitlab-ssh:
+      entryPoints:
+        - gitlab-ssh
+      rule: "HostSNI(`*`)"
+      service: gitlab-ssh
+  services:
+    gitlab-ssh:
+      loadBalancer:
+        servers:
+{% for server in adminvps_traefik_gitlab_ssh_servers %}
+          - address: "{{ server }}"
+{% endfor %}

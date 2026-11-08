@@ -28,6 +28,7 @@
 adminvps_hardening_public_tcp_ports:
   - 80      # Traefik ACME HTTP-01 + redirect to 443
   - 443     # Traefik (cloud./auth.metoda.cc)
+  - 30222   # Traefik TCP -> GitLab SSH (gitlab-shell NodePort)
   - 36243   # Xray VLESS Reality proxy endpoint
 adminvps_hardening_public_udp_ports:
   - 443     # Hysteria 2
