@@ -1,0 +1,8 @@
+# Managed by Ansible (role tower_storage) — do not edit by hand.
+bind 0.0.0.0
+protected-mode yes
+port {{ tower_redis_port }}
+requirepass "{{ tower_redis_password }}"
+appendonly yes
+appendfsync everysec
+dir /data

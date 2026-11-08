@@ -30,6 +30,27 @@ export POSTGRES_PASSWORD="$(vault kv get -field=db_password secret/keycloak)"
 ansible-playbook ansible/playbooks/site.yml --limit tower:router
 ```
 
+## Additional databases
+
+`tower_postgres_extra_databases` creates extra roles/databases idempotently in
+the same instance after the container is up. GitLab (`gitlabhq_production`,
+role `gitlab`) is the first consumer; its password is read from
+`GITLAB_POSTGRES_PASSWORD` and must match Vault `secret/gitlab` property
+`postgres_password`:
+
+```bash
+export POSTGRES_PASSWORD="$(vault kv get -field=db_password secret/keycloak)"
+export GITLAB_POSTGRES_PASSWORD="$(vault kv get -field=postgres_password secret/gitlab)"
+ansible-playbook ansible/playbooks/site.yml --limit tower
+```
+
+Redis (GitLab cache/queues) runs next to it — see [`redis.md`](redis.md).
+
+The container runs with `-c max_locks_per_transaction=256`
+(`tower_postgres_max_locks_per_transaction`). GitLab's first-boot
+`db:schema:load` creates hundreds of tables in one transaction; the default
+64 lock slots fail with `ERROR: out of shared memory`.
+
 ## Backup
 
 The database is a plain directory on the array, but prefer logical dumps:

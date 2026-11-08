@@ -1,0 +1,233 @@
+# GitLab CE 19.5 (Helm chart 10.5.4) in namespace gitlab.
+#
+# Everything stateful except Gitaly lives on tower (ADR-0002):
+#   * PostgreSQL 18.6 -> 192.168.30.200:5432, db/user gitlab
+#   * Redis 7            -> 192.168.30.200:6379
+#   * object storage     -> Garage S3 on tower (:3900), buckets created by
+#                           the tower_storage role
+# Gitaly keeps repositories on a dedicated iSCSI LUN (pv-gitaly.yaml).
+#
+# The cluster is small (4 VMs, ~13 GiB allocatable), so components that are not
+# needed are disabled: bundled cert-manager, nginx-ingress, Prometheus, MinIO
+# (not in chart 10), GitLab Runner, Container Registry, KAS, Pages and the
+# bundled Envoy Gateway. The existing nginx ingress + tower-ca are used, and
+# `gitlab.metoda.cc` is published through adminvps Traefik (Let's Encrypt).
+#
+# Requests are deliberately conservative; limits keep a runaway Rails process
+# from OOMing an entire node. Expect slow first boot while migrations run.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  interval: 30m
+  # First install runs 1000+ DB migrations on small VMs; 30m was too tight.
+  timeout: 45m
+  chart:
+    spec:
+      chart: gitlab
+      version: "10.5.4"
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab
+        namespace: gitlab
+      interval: 12h
+  install:
+    crds: Create
+    remediation:
+      retries: 8
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 8
+      remediateLastFailure: true
+
+  # On first boot the webservice/sidekiq "dependencies" init container waits for
+  # the migrations Job. The default Deployment progress deadline (600s) expires
+  # first, which Helm treats as a stalled resource and uninstalls the release.
+  # Give Deployments a full hour to become available; the Helm release timeout
+  # still bounds the overall wait.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+            patch: |
+              - op: add
+                path: /spec/progressDeadlineSeconds
+                value: 3600
+
+  values:
+    # Use the cluster's cert-manager (k8s/apps/ingress/cert-manager), not a
+    # second copy bundled with the chart.
+    installCertmanager: false
+
+    global:
+      edition: ce
+      time_zone: Europe/Moscow
+
+      hosts:
+        domain: metoda.cc
+        https: true
+        # Canonical public name. The router answers it with the ingress nodes
+        # internally (split-horizon), so the browser and Rails agree on the URL.
+        gitlab:
+          name: gitlab.metoda.cc
+
+      # Chart 10 defaults to Gateway API + Envoy; this cluster uses ingress-nginx.
+      gatewayApi:
+        enabled: false
+        installEnvoy: false
+        configureEnvoy: false
+
+      ingress:
+        enabled: true
+        class: nginx
+        provider: nginx
+        # TLS is issued by our own Certificate (certificates.yaml), not the
+        # chart's Let's Encrypt issuer.
+        configureCertmanager: false
+        tls:
+          enabled: true
+          secretName: gitlab-tls
+        annotations:
+          nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+      # Trust the internal CA for the Keycloak issuer (auth.metoda.cc).
+      certificates:
+        customCAs:
+          - secret: gitlab-tower-ca
+            keys:
+              - ca.crt
+
+      psql:
+        host: 192.168.30.200
+        port: 5432
+        database: gitlabhq_production
+        username: gitlab
+        password:
+          secret: gitlab-secrets
+          key: postgres-password
+
+      redis:
+        host: 192.168.30.200
+        port: 6379
+        auth:
+          enabled: true
+          secret: gitlab-secrets
+          key: redis-password
+
+      initialRootPassword:
+        secret: gitlab-secrets
+        key: initial-root-password
+
+      appConfig:
+        # Consolidated object storage: one Garage connection, one bucket per
+        # feature. Bucket names match ansible/roles/tower_storage.
+        object_store:
+          enabled: true
+          proxy_download: true
+          connection:
+            secret: gitlab-object-storage
+            key: config
+        lfs:
+          bucket: git-lfs
+        artifacts:
+          bucket: gitlab-artifacts
+        uploads:
+          bucket: gitlab-uploads
+        packages:
+          bucket: gitlab-packages
+
+        omniauth:
+          enabled: true
+          allowSingleSignOn: ["openid_connect"]
+          blockAutoCreatedUsers: false
+          providers:
+            - secret: gitlab-oidc
+              key: provider
+
+      # Not used by this installation.
+      kas:
+        enabled: false
+      pages:
+        enabled: false
+
+    # Disable charts that would duplicate existing cluster components or add
+    # state we do not want here.
+    nginx-ingress:
+      enabled: false
+    prometheus:
+      install: false
+    gitlab-runner:
+      install: false
+    registry:
+      enabled: false
+    traefik:
+      install: false
+    haproxy:
+      install: false
+    openbao:
+      install: false
+    gitlab-zoekt:
+      install: false
+    ai-gateway:
+      install: false
+
+    gitlab:
+      webservice:
+        minReplicas: 1
+        maxReplicas: 1
+        # Recreate avoids needing surge capacity (another 1 GiB) on the small
+        # workers during upgrades.
+        deployment:
+          strategy:
+            type: Recreate
+        resources:
+          requests:
+            cpu: 300m
+            memory: 1Gi
+          limits:
+            memory: 2Gi
+
+      sidekiq:
+        concurrency: 10
+        minReplicas: 1
+        maxReplicas: 1
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            memory: 1536Mi
+
+      gitaly:
+        persistence:
+          storageClass: tower-iscsi-static
+          size: 50Gi
+          # Bind to the single PV labeled gitlab-gitaly (pv-gitaly.yaml).
+          matchLabels:
+            gitlab-gitaly: "true"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            memory: 1Gi
+
+      toolbox:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 350Mi
+          limits:
+            memory: 1Gi
+
+      migrations:
+        resources:
+          requests:
+            cpu: 250m
+            memory: 200Mi
+          limits:
+            memory: 1Gi

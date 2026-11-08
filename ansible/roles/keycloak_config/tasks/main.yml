@@ -11,6 +11,48 @@
   changed_when: false
   no_log: true
 
+- name: keycloak_config | read the GitLab OIDC client Secret
+  ansible.builtin.command:
+    cmd: kubectl -n {{ keycloak_secret_namespace }} get secret {{ keycloak_gitlab_secret_name }} -o json
+  register: kc_gitlab_secret
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: keycloak_config | extract the GitLab OIDC client secret
+  ansible.builtin.set_fact:
+    kc_gitlab_oidc_secret: >-
+      {{ ((kc_gitlab_secret.stdout | from_json).data[keycloak_gitlab_secret_key]) | b64decode }}
+  when: >-
+    kc_gitlab_secret.rc == 0 and
+    keycloak_gitlab_secret_key in ((kc_gitlab_secret.stdout | from_json).data)
+  no_log: true
+
+# Manage clients without GitLab first, then append the GitLab client only when
+# its Secret is present (so this role still works before GitLab is deployed).
+- name: keycloak_config | build the client list
+  ansible.builtin.set_fact:
+    kc_clients: "{{ keycloak_clients | rejectattr('clientId', 'equalto', 'gitlab') | list }}"
+  no_log: true
+
+- name: keycloak_config | add the GitLab client with its secret
+  ansible.builtin.set_fact:
+    kc_clients: >-
+      {{ kc_clients + [
+           (keycloak_clients | selectattr('clientId', 'equalto', 'gitlab') | first)
+           | combine({'secret': kc_gitlab_oidc_secret})
+         ] }}
+  when: kc_gitlab_oidc_secret is defined and kc_gitlab_oidc_secret | length > 0
+  no_log: true
+
+- name: keycloak_config | note that GitLab SSO is not configured yet
+  ansible.builtin.debug:
+    msg: >-
+      {{ keycloak_gitlab_secret_name }} is absent or empty; skipping the GitLab
+      OIDC client. Apply the GitLab manifests/ExternalSecret, then rerun this
+      playbook.
+  when: kc_gitlab_oidc_secret is not defined or kc_gitlab_oidc_secret | length == 0
+
 - name: keycloak_config | build the user list (inject passwords from the Secret)
   ansible.builtin.set_fact:
     kc_users: >-
@@ -32,7 +74,7 @@
     KC_INSECURE: "{{ 'false' if keycloak_validate_certs | bool else 'true' }}"
     KC_REALM_ROLES: "{{ keycloak_realm_roles | default([]) | to_json }}"
     KC_CLIENT_SCOPES: "{{ keycloak_client_scopes | default([]) | to_json }}"
-    KC_CLIENTS: "{{ keycloak_clients | default([]) | to_json }}"
+    KC_CLIENTS: "{{ kc_clients | default([]) | to_json }}"
     KC_USERS: "{{ kc_users | to_json }}"
   register: kc_run
   changed_when: "'CHANGED' in kc_run.stdout"

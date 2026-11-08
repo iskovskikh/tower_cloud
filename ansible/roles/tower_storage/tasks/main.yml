@@ -19,6 +19,10 @@
   ansible.builtin.import_tasks: garage.yml
   when: tower_garage_enabled | bool
 
+- name: Redis cache/queues
+  ansible.builtin.import_tasks: redis.yml
+  when: tower_redis_enabled | bool
+
 - name: Postgres database
   ansible.builtin.import_tasks: postgres.yml
   when: tower_postgres_enabled | bool

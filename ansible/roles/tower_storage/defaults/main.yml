@@ -30,8 +30,9 @@ tower_iscsi_portal_port: 3260
 tower_iscsi_volumes:
   # The LUN number is explicit (`lun:`), NOT the list position, so retiring a
   # volume never shifts the others' indices and breaks their PVs.
-  - { name: vault,     size: 10G,  lun: 1 }  # Vault Raft data
-  - { name: opencloud, size: 500G, lun: 5, sparse: true } # OpenCloud metadata (POSIX xattrs + embedded IDM); sparse → floats up to 500G
+  - { name: vault,         size: 10G,  lun: 1 }  # Vault Raft data
+  - { name: opencloud,     size: 500G, lun: 5, sparse: true } # OpenCloud metadata (POSIX xattrs + embedded IDM); sparse → floats up to 500G
+  - { name: gitlab-gitaly, size: 50G,  lun: 6, sparse: true } # GitLab Gitaly repositories (k8s PV tower-iscsi-gitlab-gitaly)
 # Retired volumes (already removed here; their LUNs/files are pruned manually —
 # see docs/storage/static-iscsi.md):
 #   vol1   (lun 0, 10G)  — Phase-0 smoke test, unused
@@ -84,6 +85,18 @@ tower_garage_public_addr: "{{ ansible_default_ipv4.address | default('127.0.0.1'
 tower_garage_rpc_secret: "{{ lookup('env', 'GARAGE_RPC_SECRET') | default('', true) }}"
 tower_garage_admin_token: "{{ lookup('env', 'GARAGE_ADMIN_TOKEN') | default('', true) }}"
 
+# GitLab object storage: one key owning one bucket per feature (names match
+# k8s/apps/gitlab/helmrelease.yaml). The credentials come from the environment
+# and must match Vault secret/gitlab (s3_access_key / s3_secret_key).
+tower_garage_gitlab_enabled: true
+tower_garage_gitlab_access_key: "{{ lookup('env', 'GITLAB_S3_ACCESS_KEY') | default('', true) }}"
+tower_garage_gitlab_secret_key: "{{ lookup('env', 'GITLAB_S3_SECRET_KEY') | default('', true) }}"
+tower_garage_gitlab_buckets:
+  - gitlab-artifacts
+  - git-lfs
+  - gitlab-uploads
+  - gitlab-packages
+
 # --- Postgres: shared database for cluster apps (hosted on tower) ---------
 # Like Garage, the database runs on the storage host rather than on a k8s LUN:
 # apps connect over the network. Keycloak's realm/users live here. The password
@@ -96,3 +109,29 @@ tower_postgres_port: 5432
 tower_postgres_db: keycloak
 tower_postgres_user: keycloak
 tower_postgres_password: "{{ lookup('env', 'POSTGRES_PASSWORD') | default('', true) }}"
+# GitLab's db:schema:load creates hundreds of tables in one transaction; the
+# default 64 lock slots make PostgreSQL fail with "out of shared memory".
+tower_postgres_max_locks_per_transaction: 256
+
+# Additional databases/roles in the same instance, created idempotently after
+# the container is up. GitLab's database is the first consumer. Passwords come
+# from the environment and must match Vault secret/gitlab (property
+# postgres_password) — never committed.
+tower_postgres_extra_databases:
+  - name: gitlabhq_production
+    user: gitlab
+    password: "{{ lookup('env', 'GITLAB_POSTGRES_PASSWORD') | default('', true) }}"
+
+# --- Redis: cache and background-job queues for cluster apps --------------
+# Like Postgres and Garage, Redis runs on the storage host (data on /mnt/raid1)
+# rather than in k8s. GitLab's chart 10 has no bundled Redis. The password comes
+# from the environment and must match Vault secret/gitlab (redis_password).
+tower_redis_enabled: true
+tower_redis_data_dir: /mnt/raid1/redis
+tower_redis_config_path: /etc/redis/redis.conf
+tower_redis_image: "redis:7.4-alpine"
+tower_redis_port: 6379
+# redis:7.4-alpine ships user redis uid=999 gid=1000.
+tower_redis_uid: 999
+tower_redis_gid: 1000
+tower_redis_password: "{{ lookup('env', 'GITLAB_REDIS_PASSWORD') | default('', true) }}"

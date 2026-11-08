@@ -1,0 +1,27 @@
+# Gitaly repository storage: a dedicated tower iSCSI LUN (backstore
+# "gitlab-gitaly" = lun 6, 50 GiB, sparse). Repositories are RWO block data, so
+# they do not go on NFS; the LUN is created by the `tower_storage` role.
+#
+# The GitLab chart's gitaly StatefulSet creates its own PVC via
+# volumeClaimTemplates. It carries `persistence.matchLabels` from the
+# HelmRelease, which binds it to this single PV and avoids stealing the larger
+# `tower-iscsi-opencloud` volume (same StorageClass).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tower-iscsi-gitlab-gitaly
+  labels:
+    gitlab-gitaly: "true"
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: tower-iscsi-static
+  iscsi:
+    targetPortal: 192.168.30.200:3260
+    iqn: iqn.2026-10.lan.tower:k8s
+    lun: 6
+    fsType: ext4
+    readOnly: false

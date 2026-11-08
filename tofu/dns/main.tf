@@ -10,12 +10,13 @@ locals {
   adminvps_ip = "78.17.99.16"
 
   a_records = {
-    "@"     = "apex"
-    "www"   = "www"
+    "@"      = "apex"
+    "www"    = "www"
     "cloud"  = "OpenCloud"
     "auth"   = "Keycloak"
     "hermes" = "Hermes Agent"
-    "*"     = "wildcard routing"
+    "gitlab" = "GitLab"
+    "*"      = "wildcard routing"
   }
 }
 

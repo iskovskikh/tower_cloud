@@ -37,7 +37,65 @@
       POSTGRES_DB: "{{ tower_postgres_db }}"
       POSTGRES_USER: "{{ tower_postgres_user }}"
       POSTGRES_PASSWORD: "{{ tower_postgres_password }}"
+    # Raised for GitLab's schema load (see tower_postgres_max_locks_per_transaction).
+    command:
+      - postgres
+      - -c
+      - "max_locks_per_transaction={{ tower_postgres_max_locks_per_transaction }}"
     volumes:
       # Postgres 18+ stores data in a versioned subdir; mount the parent
       # (/var/lib/postgresql), not /var/lib/postgresql/data.
       - "{{ tower_postgres_data_dir }}:/var/lib/postgresql"
+
+- name: postgres | wait for readiness
+  community.docker.docker_container_exec:
+    container: postgres
+    command: pg_isready -U {{ tower_postgres_user }} -d postgres
+  register: postgres_ready
+  until: postgres_ready.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+# Additional databases and least-privilege login roles in the same instance.
+# Idempotent SQL: CREATE only if missing, then ALTER the password so it always
+# follows Vault. `\gexec` executes the generated statement. The password is
+# passed through the container environment (never on argv or in git).
+- name: postgres | require extra database passwords
+  ansible.builtin.assert:
+    that: item.password | length > 0
+    fail_msg: >-
+      Set the password environment variable for database role {{ item.user }}
+      (for GitLab: GITLAB_POSTGRES_PASSWORD, matching Vault secret/gitlab).
+  loop: "{{ tower_postgres_extra_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: tower_postgres_extra_databases | length > 0
+  no_log: true
+
+- name: postgres | ensure extra roles and databases
+  community.docker.docker_container_exec:
+    container: postgres
+    argv:
+      - sh
+      - -c
+      - >-
+        psql -U "{{ tower_postgres_user }}" -d postgres -v ON_ERROR_STOP=1
+        --set=role="$GL_ROLE" --set=db="$GL_DB" --set=pw="$GL_PW"
+    env:
+      GL_ROLE: "{{ item.user }}"
+      GL_DB: "{{ item.name }}"
+      GL_PW: "{{ item.password }}"
+    stdin: |
+      \set ON_ERROR_STOP on
+      SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'role', :'pw')
+      WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'role') \gexec
+      SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'role', :'pw') \gexec
+      SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'role')
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db') \gexec
+  loop: "{{ tower_postgres_extra_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: tower_postgres_extra_databases | length > 0
+  no_log: true
+  changed_when: false

@@ -80,6 +80,12 @@ router_openwrt_dns_addresses:
   - "/hermes.metoda.cc/10.10.120.102"
   - "/hermes.metoda.cc/10.10.120.103"
   - "/hermes.metoda.cc/10.10.120.104"
+  # GitLab is configured with the public name as its external_url, so LAN
+  # clients and pods resolve it to ingress-nginx instead of adminvps.
+  - "/gitlab.metoda.cc/10.10.120.101"
+  - "/gitlab.metoda.cc/10.10.120.102"
+  - "/gitlab.metoda.cc/10.10.120.103"
+  - "/gitlab.metoda.cc/10.10.120.104"
 
 # --- DHCP reservations (dnsmasq) --------------------------------------------
 # `section` is the uci section name; `mac`/`ip` pin the lease. The Keenetic

@@ -4,6 +4,54 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-08 — GitLab CE deployed at `gitlab.metoda.cc`
+
+- **Deployed:** `k8s/apps/gitlab/` — GitLab CE 19.5.3 (Helm chart 10.5.4) in
+  namespace `gitlab`, canonical host `https://gitlab.metoda.cc`.
+  - State per ADR-0002: PostgreSQL 18.6 (db/user `gitlab`) and Redis 7 on
+    **tower**; object storage is Garage S3 (buckets `gitlab-artifacts`,
+    `git-lfs`, `gitlab-uploads`, `gitlab-packages`). Only Gitaly uses a block
+    volume: tower iSCSI LUN 6 (`gitlab-gitaly`, 50 GiB sparse), bound by
+    `matchLabels`.
+  - Disabled components to fit the small cluster: bundled cert-manager,
+    nginx-ingress, Prometheus, Container Registry, KAS, Pages, GitLab Runner,
+    Envoy Gateway. Reuses ingress-nginx + tower-ca. Webservice uses a 1 GiB
+    request / 2 GiB limit and `strategy: Recreate`; a post-renderer raises
+    Deployment `progressDeadlineSeconds` to 3600 so first-boot migrations do
+    not trip Helm's stalled-resource detection.
+  - SSO: Keycloak realm `tower`, confidential client `gitlab`; the client
+    secret is mirrored into ns `keycloak` by a separate ExternalSecret so a
+    missing Vault `secret/gitlab` cannot break Keycloak's own credentials.
+    Verified: `POST /users/auth/openid_connect` 302s to
+    `https://auth.metoda.cc/realms/tower/...`.
+- **Tower infra:** `tower_storage` now creates the GitLab Postgres role/db
+  (`GITLAB_POSTGRES_PASSWORD`), a Redis 7 container on `/mnt/raid1/redis`
+  (`GITLAB_REDIS_PASSWORD`, AOF, gid 1000), the four Garage buckets for the
+  GitLab key (`GITLAB_S3_ACCESS_KEY`/`GITLAB_S3_SECRET_KEY`) and the Gitaly
+  LUN. Postgres runs with `max_locks_per_transaction=256` (default 64 made
+  `db:schema:load` fail with "out of shared memory").
+- **Disk expansion:** node disks were 22.2 GiB; GitLab image pulls filled them
+  and kubelet evicted pods (ingress-nginx included) on DiskPressure. All four
+  VMs were resized to 40 GiB on proxmox (`qm resize ... 40G`), then
+  `growpart`/`resize2fs` inside the guests (root `sda1`, ~21-29 GiB free).
+  This matches the aspirational `disk_gb = 40` in `tofu/proxmox/variables.tf`;
+  the tofu stack is still a placeholder (no managed state).
+- **Edge/DNS:** `gitlab` A record in `tofu/dns`, `gitlab.metoda.cc` in
+  `adminvps_traefik_hosts`, and split-horizon `gitlab.metoda.cc` in
+  `router_openwrt`. Public path verified with a Let's Encrypt cert
+  (`CN=gitlab.metoda.cc`, expires 2027-02-06) and `/-/readiness` 200.
+- **Runbook:** `docs/gitlab/README.md` (Vault fields, apply order, verify,
+  resource caveats).
+- **Status:** applied via `kubectl apply` (the manifests are not committed to
+  `master` yet, so Flux does not own them; commit/push is still needed).
+  Verified: HelmRelease Ready, all pods Running/Completed, PVC `Bound` to
+  `tower-iscsi-gitlab-gitaly`, `/users/sign_in` 200, GitLab readiness `ok`.
+- **Not in git:** Vault `secret/gitlab` values (`postgres_password`,
+  `redis_password`, `initial_root_password`, `oidc_client_secret`,
+  `s3_access_key`, `s3_secret_key`).
+
+---
+
 ## 2026-11-07 — OpenCloud space «Общее» quota raised to 500 GB
 
 - **Change:** the project space «Общее» (drive

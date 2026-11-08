@@ -1,0 +1,50 @@
+---
+# Redis on tower, run as a Docker container with append-only persistence on the
+# data array. Serves the cluster's apps over the network; no iSCSI LUN / PVC.
+# GitLab's Helm chart 10 has no bundled Redis, so this is its cache/queue store.
+# See docs/storage/redis.md.
+
+- name: redis | require password
+  ansible.builtin.assert:
+    that: tower_redis_password | length > 0
+    fail_msg: >-
+      Set GITLAB_REDIS_PASSWORD in the environment (secrets are not stored in
+      the repo). It must match Vault secret/gitlab (property redis_password).
+
+- name: redis | create data directory
+  ansible.builtin.file:
+    path: "{{ tower_redis_data_dir }}"
+    state: directory
+    owner: "{{ tower_redis_uid }}"
+    group: "{{ tower_redis_gid }}"
+    mode: "0750"
+
+- name: redis | create config directory
+  ansible.builtin.file:
+    path: "{{ tower_redis_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: redis | render redis.conf (password from the environment)
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "{{ tower_redis_config_path }}"
+    owner: root
+    group: "{{ tower_redis_gid }}"
+    mode: "0640"
+  notify: restart redis
+
+- name: redis | run container
+  community.docker.docker_container:
+    name: redis
+    image: "{{ tower_redis_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports:
+      - "{{ tower_redis_port }}:6379"
+    volumes:
+      - "{{ tower_redis_config_path }}:/usr/local/etc/redis/redis.conf:ro"
+      - "{{ tower_redis_data_dir }}:/data"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]

@@ -100,6 +100,16 @@ spec:
                 secretKeyRef:
                   name: keycloak-secrets
                   key: viskovskikh-password
+            # GitLab OIDC client (realm import only, i.e. a fresh realm).
+            # Optional so Keycloak still starts before Vault secret/gitlab is
+            # populated; the client itself is reconciled by ansible
+            # role keycloak_config.
+            - name: GITLAB_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-gitlab-oidc
+                  key: GITLAB_OIDC_CLIENT_SECRET
+                  optional: true
             - name: JAVA_OPTS_APPEND
               value: -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20
           volumeMounts:

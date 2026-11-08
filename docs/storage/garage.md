@@ -49,6 +49,16 @@ ssh tower sudo docker exec garage /garage bucket allow --read --write --owner <b
 ssh tower sudo docker exec garage /garage key list
 ```
 
+## GitLab buckets
+
+The `tower_storage` role also provisions the GitLab key and its buckets when
+`tower_garage_gitlab_enabled` is set: `gitlab-artifacts`, `git-lfs`,
+`gitlab-uploads` and `gitlab-packages`. Credentials come from the environment
+(`GITLAB_S3_ACCESS_KEY` / `GITLAB_S3_SECRET_KEY`) and must match Vault
+`secret/gitlab`; the key is imported only if absent, then granted read/write/
+owner on each bucket. GitLab connects with `path_style: true` and
+`proxy_download: true`, so clients never talk to Garage directly.
+
 ## Migration: k8s Garage (block LUN) → Garage on tower
 
 Order matters — the old in-cluster Garage is the migration **source** and must

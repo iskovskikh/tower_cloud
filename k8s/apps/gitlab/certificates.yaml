@@ -1,0 +1,39 @@
+# TLS for the GitLab Ingress. Public traffic terminates at adminvps Traefik
+# (Let's Encrypt) and is re-encrypted to ingress-nginx over WireGuard; on the
+# LAN the same hostname (split-horizon DNS) hits ingress-nginx directly, so the
+# internal certificate is tower-ca.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitlab-tls
+  namespace: gitlab
+spec:
+  secretName: gitlab-tls
+  dnsNames:
+    - gitlab.metoda.cc
+    - gitlab.k8s.lan
+  issuerRef:
+    name: tower-ca
+    kind: ClusterIssuer
+---
+# Namespace-scoped copy of the tower-ca root, so the Rails/sidekiq containers
+# trust the internal OIDC issuer (auth.metoda.cc). The leaf is unused; the
+# chart injects `ca.crt` via global.certificates.customCAs.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitlab-tower-ca
+  namespace: gitlab
+spec:
+  commonName: gitlab-tower-ca
+  secretName: gitlab-tower-ca
+  dnsNames:
+    - gitlab-tower-ca.gitlab.svc.cluster.local
+  duration: 87600h
+  renewBefore: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: tower-ca
+    kind: ClusterIssuer

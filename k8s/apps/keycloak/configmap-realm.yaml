@@ -122,6 +122,28 @@ data:
           }
         },
         {
+          "clientId": "gitlab",
+          "name": "GitLab",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": "${GITLAB_OIDC_CLIENT_SECRET}",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "rootUrl": "https://gitlab.metoda.cc",
+          "adminUrl": "https://gitlab.metoda.cc",
+          "redirectUris": [
+            "https://gitlab.metoda.cc/users/auth/openid_connect/callback"
+          ],
+          "webOrigins": [
+            "https://gitlab.metoda.cc"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "+"
+          }
+        },
+        {
           "clientId": "web",
           "name": "OpenCloud Web App",
           "enabled": true,

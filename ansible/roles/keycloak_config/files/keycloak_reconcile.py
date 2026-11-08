@@ -272,6 +272,11 @@ for spec in CLIENTS:
             for key in MANAGED_CLIENT_KEYS
             if key in spec
         )
+        # A spec that explicitly carries `secret` opts into keeping this
+        # credential in sync (GitLab's client secret comes from Vault). Other
+        # clients omit it, so their secrets are never reset.
+        if spec.get("secret") and current.get("secret") != spec["secret"]:
+            drift = True
         if drift:
             status, resp = call(
                 "PUT",

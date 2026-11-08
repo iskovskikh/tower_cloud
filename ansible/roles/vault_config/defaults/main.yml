@@ -53,6 +53,18 @@ vault_app_secrets:
       reva_bind_password: null
       wopi_secret: null
       thumbnail_transfer_secret: null
+  # GitLab: database/Redis passwords, initial root password, Keycloak OIDC
+  # client secret and the Garage S3 key imported by the tower_storage role.
+  # `openssl rand -hex 16` values are accepted by both Postgres/Redis and
+  # Garage `key import` (verified).
+  - path: gitlab
+    keys:
+      postgres_password: null
+      redis_password: null
+      initial_root_password: null
+      oidc_client_secret: null
+      s3_access_key: null
+      s3_secret_key: null
 
 # --- Vault OIDC auth against Keycloak (realm "tower") ----------------------
 # Disabled by default: enable after Keycloak is up and the realm is imported:

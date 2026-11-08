@@ -18,6 +18,7 @@ adminvps_traefik_hosts:
   - cloud.metoda.cc   # OpenCloud
   - auth.metoda.cc    # Keycloak
   - hermes.metoda.cc  # Hermes Agent dashboard
+  - gitlab.metoda.cc  # GitLab
 
 # ingress-nginx runs as a hostNetwork DaemonSet on every k8s node, so any node
 # is an entry point. Traefik reaches them over the WireGuard tunnel and

@@ -18,6 +18,10 @@ keycloak_secret_namespace: keycloak
 keycloak_secret_name: keycloak-secrets
 keycloak_admin_username_key: admin-username
 keycloak_admin_password_key: admin-password
+# Separate Secret (k8s/apps/keycloak/externalsecret-gitlab.yaml) because the
+# GitLab client secret comes from Vault secret/gitlab, not secret/keycloak.
+keycloak_gitlab_secret_name: keycloak-gitlab-oidc
+keycloak_gitlab_secret_key: GITLAB_OIDC_CLIENT_SECRET
 # The internal CA (tower-ca) is not in the control host's trust store; this is a
 # LAN-only admin call, so verification is skipped (as oauth2-proxy also does).
 keycloak_validate_certs: false
@@ -146,6 +150,25 @@ keycloak_clients:
       post.logout.redirect.uris: "oc://ios.opencloud.eu"
     defaultClientScopes: "{{ keycloak_opencloud_default_scopes }}"
     optionalClientScopes: "{{ keycloak_opencloud_optional_scopes }}"
+  # Confidential client used by GitLab (OmniAuth openid_connect). The secret is
+  # injected by tasks/main.yml from the keycloak-gitlab-oidc Secret (Vault
+  # secret/gitlab -> ESO), so it never lives in this file.
+  - clientId: gitlab
+    name: GitLab
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    rootUrl: "https://gitlab.metoda.cc"
+    adminUrl: "https://gitlab.metoda.cc"
+    redirectUris:
+      - "https://gitlab.metoda.cc/users/auth/openid_connect/callback"
+    webOrigins:
+      - "https://gitlab.metoda.cc"
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: "+"
 
 keycloak_users:
   - username: aiskovskikh

@@ -7,3 +7,8 @@
 - name: reload systemd
   ansible.builtin.systemd_service:
     daemon_reload: true
+
+- name: restart redis
+  community.docker.docker_container:
+    name: redis
+    state: restarted

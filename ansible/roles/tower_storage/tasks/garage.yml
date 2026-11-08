@@ -65,3 +65,105 @@
     volumes:
       - "{{ tower_garage_config_path }}:/etc/garage.toml:ro"
       - "{{ tower_garage_data_dir }}:{{ tower_garage_data_dir }}"
+
+# --- GitLab object storage (one key, one bucket per feature) ---------------
+# Garage permissions are per bucket, so the same key is granted access to each
+# bucket GitLab uses. Idempotent: the key is imported only if absent, and
+# `bucket info` decides whether the bucket must be created.
+- name: garage | require GitLab object-storage credentials
+  ansible.builtin.assert:
+    that:
+      - tower_garage_gitlab_access_key | length > 0
+      - tower_garage_gitlab_secret_key | length > 0
+    fail_msg: >-
+      Set GITLAB_S3_ACCESS_KEY and GITLAB_S3_SECRET_KEY in the environment
+      (secrets are not stored in the repo). They must match Vault
+      secret/gitlab (properties s3_access_key / s3_secret_key).
+  when: tower_garage_gitlab_enabled | bool
+
+- name: garage | wait for the admin CLI
+  community.docker.docker_container_exec:
+    container: garage
+    command: /garage status
+  register: garage_status
+  until: garage_status.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+  when: tower_garage_gitlab_enabled | bool
+
+# The Garage image is distroless: there is no shell, so every step is a direct
+# /garage invocation and the decision is made by Ansible from the command result.
+- name: garage | list keys
+  community.docker.docker_container_exec:
+    container: garage
+    command: /garage key list
+  register: garage_keys
+  changed_when: false
+  failed_when: false
+  when: tower_garage_gitlab_enabled | bool
+  no_log: true
+
+- name: garage | import the GitLab key
+  community.docker.docker_container_exec:
+    container: garage
+    argv:
+      - /garage
+      - key
+      - import
+      - "{{ tower_garage_gitlab_access_key }}"
+      - "{{ tower_garage_gitlab_secret_key }}"
+      - -n
+      - gitlab
+      - --yes
+  when:
+    - tower_garage_gitlab_enabled | bool
+    - tower_garage_gitlab_access_key not in (garage_keys.stdout | default(''))
+  no_log: true
+  changed_when: true
+
+- name: garage | check GitLab buckets
+  community.docker.docker_container_exec:
+    container: garage
+    argv: [/garage, bucket, info, "{{ item }}"]
+  loop: "{{ tower_garage_gitlab_buckets }}"
+  loop_control:
+    label: "{{ item }}"
+  register: garage_buckets
+  changed_when: false
+  failed_when: false
+  when: tower_garage_gitlab_enabled | bool
+  no_log: true
+
+- name: garage | create missing GitLab buckets
+  community.docker.docker_container_exec:
+    container: garage
+    argv: [/garage, bucket, create, "{{ item.item }}"]
+  loop: "{{ garage_buckets.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - tower_garage_gitlab_enabled | bool
+    - item.rc | default(0) != 0
+  no_log: true
+  changed_when: true
+
+- name: garage | grant the GitLab key access to its buckets
+  community.docker.docker_container_exec:
+    container: garage
+    argv:
+      - /garage
+      - bucket
+      - allow
+      - --read
+      - --write
+      - --owner
+      - "{{ item }}"
+      - --key
+      - "{{ tower_garage_gitlab_access_key }}"
+  loop: "{{ tower_garage_gitlab_buckets }}"
+  loop_control:
+    label: "{{ item }}"
+  when: tower_garage_gitlab_enabled | bool
+  no_log: true
+  changed_when: false
