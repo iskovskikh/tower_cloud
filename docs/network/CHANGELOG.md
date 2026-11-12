@@ -4,6 +4,26 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-12 — OpenCloud public links no longer require a password
+
+- **Why:** OpenCloud 7.2.4 defaults `public_sharing_share_must_have_password`
+  to `true`, so every public link had to be created with a password.
+- **Change:** `k8s/apps/opencloud/deployment.yaml` sets
+  `OC_SHARING_PUBLIC_SHARE_MUST_HAVE_PASSWORD=false` and
+  `OC_SHARING_PUBLIC_WRITEABLE_SHARE_MUST_HAVE_PASSWORD=false`. The `OC_`
+  prefix reaches both the `sharing` and `frontend` (OCS) services.
+- **Scope:** removes the requirement for **new** links only; existing
+  password-protected links keep their passwords.
+- **Deploy:** committed `8df9488` and pushed to `master`; Flux reconciles
+  `k8s/` from git. `https://cloud.metoda.cc/status.php` stayed 200 (OpenCloud
+  7.2.4) while polling after the push.
+- **Verification:** ❓ pod env not independently confirmed from `minibox`
+  (no `kubectl`/kubeconfig there). To verify, create a link without a password,
+  or run on `archasus`:
+  `kubectl -n opencloud get deploy opencloud -o yaml | grep -A1 SHARE_MUST_HAVE_PASSWORD`.
+
+---
+
 ## 2026-11-08 — GitLab blob page 502 fixed (webservice limit 2 GiB)
 
 - **Symptom:** `https://gitlab.metoda.cc/special_tools/sign_skill/-/blob/master/README.md?ref_type=heads`
