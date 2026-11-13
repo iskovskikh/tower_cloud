@@ -1,9 +1,9 @@
 ---
 # Xray VLESS Reality client + SSH reverse tunnel for the public ingress path.
 #
-# Since 2026-11-13 the home provider drops WireGuard *transport* packets
-# (handshake passes, data does not — see docs/network/CHANGELOG.md), so the
-# public entry points cannot use the WireGuard tunnel. This role instead runs
+# The home provider DPI-drops the WireGuard *transport* (handshake passes,
+# data does not — see docs/network/CHANGELOG.md), and WireGuard was retired on
+# 2026-11-14. The public entry points therefore use this role, which runs
 # an Xray VLESS Reality client on a k8s node and keeps an SSH reverse tunnel
 # open **through that client** to adminvps:
 #
@@ -26,7 +26,11 @@ xray_tunnel_fingerprint: chrome
 xray_tunnel_public_key: "xsuZ_5wQz9v8_qd_wKdQyaeIrMuEnd4EpCh_HwPUjxg"
 xray_tunnel_short_id: "2f3f8321"
 
-xray_tunnel_socks_host: 127.0.0.1
+# The SOCKS inbound listens on the node's VLAN120 address (not just loopback)
+# so in-cluster workloads can use it as their egress, e.g. Hermes' Telegram
+# proxy (TELEGRAM_PROXY). It is reachable only from VLAN120/LAN, never the
+# internet. It is also the endpoint the reverse tunnel's ProxyCommand dials.
+xray_tunnel_socks_host: 10.10.120.101
 xray_tunnel_socks_port: 1081
 
 # Loopback ports on adminvps that the SSH reverse forwards bind.

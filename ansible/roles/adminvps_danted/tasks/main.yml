@@ -9,14 +9,13 @@
     that: adminvps_danted_conf.stat.exists
     fail_msg: "danted is not installed on adminvps"
 
-# Multiple `internal:` lines make danted listen on the WireGuard address in
-# addition to the public interface. UFW still limits :1080 to WG/cluster.
-- name: adminvps_danted | listen on the WireGuard address
+# WireGuard was retired 2026-11-14; remove the additional listener an older
+# revision added on 10.200.0.1.
+- name: adminvps_danted | remove the retired WireGuard listener
   ansible.builtin.lineinfile:
     path: /etc/danted.conf
-    regexp: '^internal:\s+{{ adminvps_danted_wg_ip }}\s+port\s*=\s*1080\s*$'
-    line: "internal: {{ adminvps_danted_wg_ip }} port = 1080"
-    insertafter: '^internal:'
+    regexp: '^internal:\s+10\.200\.0\.1\s+port\s*=\s*1080\s*$'
+    state: absent
     backup: true
   notify: restart danted
 
@@ -30,17 +29,14 @@
     backup: true
   notify: restart danted
 
-- name: adminvps_danted | allow cluster and WG networks without auth
+# Only the cluster network may skip authentication. The WireGuard-network rule
+# was dropped when WireGuard was retired (2026-11-14).
+- name: adminvps_danted | allow the cluster network without auth
   ansible.builtin.blockinfile:
     path: /etc/danted.conf
     marker: "# {mark} ANSIBLE MANAGED: hermes cluster egress"
     insertbefore: '^client pass \{'
     block: |
-      socks pass {
-          from: {{ adminvps_danted_wg_cidr }} to: 0.0.0.0/0
-          socksmethod: none
-          command: connect
-      }
       socks pass {
           from: {{ adminvps_danted_cluster_cidr }} to: 0.0.0.0/0
           socksmethod: none
@@ -70,3 +66,18 @@
     proto: tcp
     from: "{{ adminvps_danted_cluster_cidr }}"
     comment: hermes-egress
+
+# The WireGuard-network exception is dead with the tunnel; remove it so :1080
+# is closed except for the cluster rule above.
+- name: adminvps_danted | remove the retired WireGuard UFW rule
+  community.general.ufw:
+    rule: allow
+    delete: true
+    port: "1080"
+    proto: tcp
+    from_ip: "10.200.0.0/24"
+  register: adminvps_danted_retired_ufw
+  failed_when: >-
+    adminvps_danted_retired_ufw is failed and
+    'Could not delete non-existent rule' not in
+    (adminvps_danted_retired_ufw.stderr | default(''))

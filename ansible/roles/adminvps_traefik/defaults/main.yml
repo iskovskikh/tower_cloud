@@ -1,8 +1,9 @@
 ---
-# adminvps — public front end (ADR-0003): Traefik terminates public TLS with
-# Let's Encrypt (HTTP-01) and re-encrypts to the home ingress-nginx over the
-# WireGuard tunnel. Traefik runs as a Docker Compose service (the VPS had no
-# Docker before this role). See ADR-0003 / ADR-0004.
+# adminvps — public front end (ADR-0003, superseded by ADR-0006): Traefik
+# terminates public TLS with Let's Encrypt (HTTP-01) and re-encrypts to the
+# home ingress-nginx over the Xray VLESS Reality + SSH reverse tunnel. Traefik
+# runs as a Docker Compose service (the VPS had no Docker before this role).
+# See ADR-0003 / ADR-0004 / ADR-0006.
 
 adminvps_traefik_dir: /etc/traefik
 adminvps_traefik_image: "traefik:v3.7.14"
@@ -25,17 +26,12 @@ adminvps_traefik_hosts:
 # certificate is not trusted on the VPS, so verification is skipped (the tunnel
 # is already encrypted).
 #
-# 2026-11-13: the home provider drops WireGuard *transport* packets (handshake
-# passes, data does not), so the backends are reached over the **Xray VLESS
-# Reality + SSH reverse tunnel** from k8s-node-1 instead (role xray_tunnel).
+# The home provider blocks the WireGuard transport (DPI), so the backends are
+# reached over the **Xray VLESS Reality + SSH reverse tunnel** from k8s-node-1
+# (role xray_tunnel). WireGuard was retired 2026-11-14; there is no WG fallback.
 # The SSH reverse forwards bind these loopback ports on adminvps:
 adminvps_traefik_ingress_servers:
   - https://127.0.0.1:10443
-# WireGuard fallback (used until 2026-11-13; re-enable if the DPI blocks Xray):
-#   - https://10.10.120.101:443
-#   - https://10.10.120.102:443
-#   - https://10.10.120.103:443
-#   - https://10.10.120.104:443
 
 # GitLab SSH (gitlab-shell) is NodePort 30222 on every k8s node; Traefik exposes
 # it publicly on the same port 30222 (adminvps :22 belongs to the admin sshd).
@@ -43,8 +39,3 @@ adminvps_traefik_ingress_servers:
 # ~/.ssh/config).
 adminvps_traefik_gitlab_ssh_servers:
   - 127.0.0.1:12222
-# WireGuard fallback:
-#   - 10.10.120.101:30222
-#   - 10.10.120.102:30222
-#   - 10.10.120.103:30222
-#   - 10.10.120.104:30222

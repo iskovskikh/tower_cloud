@@ -1,6 +1,6 @@
 ---
 # adminvps_hardening — key-only SSH, default-deny UFW, fail2ban.
-# See defaults/main.yml for the public allowlist and the WireGuard-only ports.
+# See defaults/main.yml for the public allowlist and the retired WireGuard rules.
 
 - name: Install hardening packages
   ansible.builtin.apt:
@@ -11,14 +11,6 @@
     state: present
     update_cache: true
     cache_valid_time: 3600
-
-- name: Refuse a port that is both public and WireGuard-only
-  ansible.builtin.assert:
-    that:
-      - (adminvps_hardening_public_tcp_ports | intersect(adminvps_hardening_wg_only_tcp_ports)) | length == 0
-    fail_msg: >-
-      A port is listed in both adminvps_hardening_public_tcp_ports and
-      adminvps_hardening_wg_only_tcp_ports; the public allow rule would win.
 
 - name: Check the admin user's authorized_keys before disabling passwords
   ansible.builtin.stat:
@@ -142,16 +134,22 @@
     comment: public-udp
   loop: "{{ adminvps_hardening_public_udp_ports }}"
 
-# Admin/control ports (danted, x-ui) remain on 0.0.0.0 but are only reachable
-# through WireGuard; loopback still works for ssh -L tunnels.
-- name: Allow admin ports only from the WireGuard network
+# WireGuard was retired 2026-11-14. Drop the rules an older revision created:
+# the public 51820/udp allow and the 10.200.0.0/24 admin-port exceptions. After
+# this, those admin ports have no allow rule and stay closed.
+- name: Remove retired WireGuard UFW rules
   community.general.ufw:
     rule: allow
-    port: "{{ item | string }}"
-    proto: tcp
-    from_ip: "{{ adminvps_hardening_wg_cidr }}"
-    comment: wireguard-admin
-  loop: "{{ adminvps_hardening_wg_only_tcp_ports }}"
+    delete: true
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto }}"
+    from_ip: "{{ item['from'] | default(omit, true) }}"
+  loop: "{{ adminvps_hardening_retired_ufw_rules }}"
+  register: adminvps_hardening_retired_ufw
+  failed_when: >-
+    adminvps_hardening_retired_ufw is failed and
+    'Could not delete non-existent rule' not in
+    (adminvps_hardening_retired_ufw.stderr | default(''))
 
 - name: Enable UFW
   community.general.ufw:

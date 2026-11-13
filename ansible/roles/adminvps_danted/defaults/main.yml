@@ -1,9 +1,11 @@
 ---
 # Cluster egress through the adminvps SOCKS proxy (danted, already running).
 # The cluster cannot reach Telegram directly (all API IPs time out), so the
-# Hermes gateway uses this proxy. Only the WireGuard peer and the k8s node
-# network may use it without a username/password; every other client keeps the
-# original danted auth.
-adminvps_danted_wg_ip: "10.200.0.1"
+# Hermes gateway used this proxy over the WireGuard tunnel.
+#
+# NOTE (2026-11-14): WireGuard was retired — the home provider DPI-drops its
+# transport — so the WG listener and the WG-network allowance were removed.
+# Hermes' TELEGRAM_PROXY was repointed to the Xray SOCKS client on k8s-node-1,
+# so nothing depends on this proxy any more; the cluster rule is kept for a
+# future tunnel (see docs/network/CHANGELOG.md).
 adminvps_danted_cluster_cidr: "10.10.120.0/24"
-adminvps_danted_wg_cidr: "10.200.0.0/24"

@@ -42,7 +42,7 @@ domains:
       Chosen external domain (replaces the earlier towercloud.dev / towercloud.ru
       candidates). Front: Traefik + Let's Encrypt on adminvps (78.17.99.16) —
       **live 2026-10-15** (certs for cloud./auth. via HTTP-01) — publishing
-      cloud. / auth. / hermes. over the WireGuard tunnel — see ADR-0003/0004/0005.
+      cloud. / auth. / hermes. over the Xray/SSH reverse tunnel — see ADR-0003/0004/0005/0006.
       After the 2026-10-19 move to Timeweb Cloud only the default MX/SPF records
       remained; the previous hosting-panel A records were gone, so they were
       recreated via the API/`tofu/dns` and verified publicly. TLS remains
@@ -72,14 +72,6 @@ subnets:
     purpose: Kubernetes nodes (VLAN 120) — isolated L2
     gateway: 10.10.120.1    # the Keenetic Omni II (eth0.120) since 2026-10-14; was the main router
     dhcp: false            # nodes keep static addressing; reservations were on the main router ❓
-  - id: wg_uplink
-    cidr: 10.200.0.0/24
-    purpose: WireGuard tunnel adminvps <-> Keenetic (external-access path)
-    gateway: 10.200.0.1     # adminvps (public VPS); peer Keenetic = 10.200.0.2
-    dhcp: false
-    note: >
-      Server on adminvps (udp 51820) with AllowedIPs routing home nets
-      (192.168.30.0/24, 10.10.120.0/24) to the Keenetic peer.
   - id: lan_v6_ula
     cidr: fde7:823d:5636::/64
     purpose: IPv6 ULA advertised by the router via RA
@@ -118,9 +110,9 @@ hosts:
       2026-10-14: switch port 3 moved from VLAN30 (Servers) to VLAN1 (LAN) — the
       Keenetic Omni II's WAN now terminates there (DHCP 192.168.1.216) so its
       WAN subnet does not collide with the server segment.
-      2026-11-13: dual-WAN via mwan3 — `wan` = `eth0.2` (DHCP CGNAT
-      `100.64.48.134/20`) and `wan2` = `eth0.3` (DHCP `10.108.221.4/27` from
-      the 4G modem `192.168.1.119`). The primary WAN lost its upstream this day
+      2026-11-13: dual-WAN via mwan3 — `wan` = `eth0.2` (ISP **ZenCom**, DHCP
+      CGNAT `100.64.48.134/20`) and `wan2` = `eth0.3` (ISP **DomOnline**, DHCP
+      `10.108.221.4/27` from the 4G modem `192.168.1.119`). The primary WAN lost its upstream this day
       (link/lease still up, gateway `100.64.48.1` unreachable); `ifdown/ifup
       wan` restored it. **mwan3 policy is now `wan_wanb`** (primary `wan`, 4G
       as failover) because `wan2` stalls TCP data after the handshake. Role
@@ -248,27 +240,24 @@ hosts:
     access: "n/a"
 
   - id: keenetic-omni-2
-    role: server-router + wireguard-client
+    role: server-router
     status: up
     hostname: OpenWrt
     ips:
       servers: 192.168.30.1
       lan_uplink: 192.168.1.216   # DHCP on the main router LAN (via its switch port 3)
-      wireguard: 10.200.0.2
     mac: "e4:18:6b:5a:e1:39"
     hardware: ZyXEL Keenetic Omni II (KN-1410) — MediaTek MT7620N, 64 MB RAM
     os: OpenWrt 23.05.3 (ramips/mt7620)
     notes: >
       Reflashed to OpenWrt and brought online 2026-10-14. Now the **router for
-      the server segment** (br-lan 192.168.30.1/24) and the home **WireGuard
-      client** (10.200.0.2) to adminvps. Wi-Fi disabled. Installed:
-      kmod-wireguard + wireguard-tools (overlay has only ~1.7 MB free).
+      the server segment** (br-lan 192.168.30.1/24). Wi-Fi disabled.
       Switch: port 0 = WAN, ports 1-4 = LAN. WAN uplink is the main router's
       switch port 3 (now VLAN1/LAN, DHCP 192.168.1.216). Port 3 = proxmox, a
       **trunk** (VLAN30 + VLAN120 tagged): VLAN30 (eth0.30) is bridged into
       br-lan; VLAN120 (eth0.120) = 10.10.120.1, the k8s nodes' gateway (keeps
       k8s in its own L2). Port 2 = tower. Firewall rule Allow-Mgmt-WAN
-      (tcp 22/80/443 from 192.168.0.0/16) plus wg0/k8s in the lan zone.
+      (tcp 22/80/443 from 192.168.0.0/16) plus k8s in the lan zone.
       2026-10-15: **DHCP server for VLAN120** — `dhcp.k8s` pool
       (10.10.120.100-.249) + static reservations `dhcp.k8s_node1..4` for the four
       node MACs (.101-.104). The cluster was offline before this: the nodes had
@@ -279,13 +268,11 @@ hosts:
       private-IP answers forwarded from the main router).
       2026-11-13: the main router failed over `wan`→`wan2` and the WG tunnel
       did not recover; diagnostics showed the provider **DPI-drops WG
-      transport** (handshake passes, data does not). A `wg-watchdog` cron was
-      installed that day but **removed 2026-11-14** because bouncing `wg0`
-      cannot fix DPI and just churned the interface. Public ingress now runs
-      over the Xray/SSH tunnel on k8s-node-1; `wg0` remains configured for
-      other uses. The WG interface/keys are still hand-configured (private key
-      not in git); the rest of the box also remains manual — see
-      open_questions.
+      transport** (handshake passes, data does not). Public ingress moved to
+      the Xray/SSH tunnel on k8s-node-1, and **WireGuard was retired on
+      2026-11-14** — `wg0`, its keys and the kmod/wireguard-tools packages were
+      removed. The rest of the box (VLANs, DHCP, routes, firewall) remains
+      manual — see open_questions.
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
       - {port: 80, proto: tcp, service: luci-http}
@@ -293,21 +280,20 @@ hosts:
     access: "http://192.168.30.1 / ssh root@192.168.1.216 (WAN) — credentials: external"
 
   - id: adminvps
-    role: public-vps + wireguard-server
+    role: public-vps
     status: up
     hostname: 206564.com
     ips:
       public: 78.17.99.16
-      wireguard: 10.200.0.1
     os: Ubuntu 24.04 LTS (kernel 6.8.0)
     hardware: VPS — 1 vCPU, 2 GB RAM, 15 GB disk (amd64)
     notes: >
       Public VPS (78.17.99.16), reachable from the internet, provided by a VPS
       host. It was already a personal proxy box: x-ui/Xray 3.2.6,
       hysteria-server (udp:443), danted SOCKS (tcp:1080). Since 2026-10-14 also
-      the **WireGuard server** (wg0 10.200.0.1/24, udp 51820) with the Keenetic
-      as its only peer (AllowedIPs route the home nets 192.168.30.0/24 and
-      10.10.120.0/24). User `arch` with NOPASSWD sudo. Since 2026-10-15 runs
+      the WireGuard server until it was **retired 2026-11-14** (DPI-blocked
+      transport; wg0, its keys and the wireguard packages were removed).
+      User `arch` with NOPASSWD sudo. Since 2026-10-15 runs
       **Traefik** (Docker Compose, v3.7.14; Ansible role `adminvps_traefik`) on
       :80/:443 with Let's Encrypt **HTTP-01**, fronting `cloud.` / `auth.`
       services at home.
@@ -320,14 +306,13 @@ hosts:
     services:
       - {port: 22, proto: tcp, service: ssh}
       - {port: 80, proto: tcp, service: "Traefik (Let's Encrypt HTTP-01 + :443 redirect)"}
-      - {port: 1080, proto: tcp, service: "danted SOCKS5 (UFW: WireGuard-only since 2026-10-23; was provider-filtered before)"}
+      - {port: 1080, proto: tcp, service: "danted SOCKS5 (UFW: closed since 2026-11-14, was WireGuard-only; reach with ssh -L)"}
       - {port: 443, proto: tcp, service: "Traefik (public TLS — cloud./auth./hermes./gitlab. -> ingress-nginx over the Xray/SSH tunnel)"}
       - {port: 443, proto: udp, service: hysteria}
-      - {port: 2096, proto: tcp, service: "x-ui subscription endpoint (UFW: WireGuard-only since 2026-10-23)"}
-      - {port: 12267, proto: tcp, service: "x-ui web panel (plain HTTP, random path; UFW: WireGuard-only since 2026-10-23)"}
-      - {port: 30222, proto: tcp, service: "Traefik TCP -> GitLab SSH (gitlab-shell NodePort 30222 over WG)"}
+      - {port: 2096, proto: tcp, service: "x-ui subscription endpoint (UFW: closed since 2026-11-14, was WireGuard-only)"}
+      - {port: 12267, proto: tcp, service: "x-ui web panel (plain HTTP, random path; UFW: closed since 2026-11-14, was WireGuard-only)"}
+      - {port: 30222, proto: tcp, service: "Traefik TCP -> GitLab SSH (gitlab-shell NodePort 30222 via reverse tunnel)"}
       - {port: 36243, proto: tcp, service: "Xray VLESS Reality inbound (public proxy endpoint)"}
-      - {port: 51820, proto: udp, service: "WireGuard server (home tunnel)"}
     security_audit_2026_10_23: >
       External audit from archasus/Shodan/check-host, then hardening applied
       (role `adminvps_hardening`). Before: public TCP 22 (password auth + root
@@ -336,8 +321,9 @@ hosts:
       UFW inactive, iptables INPUT ACCEPT; ~6.3k failed SSH logins/day. danted
       :1080 listened on 0.0.0.0 but was filtered externally.
       After 2026-10-23: UFW active (default deny incoming) with public
-      22/80/443/36243 tcp + 443/51820 udp; 1080/2096/12267 only from
-      10.200.0.0/24; SSH key-only (PasswordAuthentication no, PermitRootLogin
+      22/80/443/36243 tcp + 443 udp; 1080/2096/12267 only from
+      10.200.0.0/24 (removed 2026-11-14 with WireGuard, so they are now
+      closed); SSH key-only (PasswordAuthentication no, PermitRootLogin
       without-password), fail2ban sshd active. External scan confirms
       1080/2096/12267 blocked and cloud. 200 / auth. 302.
     access: "ssh arch@78.17.99.16 (credentials: external)"
@@ -430,12 +416,15 @@ kubernetes:
     Keycloak OIDC (public PKCE client `hermes`, redirect
     `https://hermes.metoda.cc/auth/callback`); OIDC discovery trusts tower-ca
     via a merged CA bundle. Public TLS is Let's Encrypt on adminvps Traefik
-    (re-encrypt to ingress-nginx over WG); `hermes.metoda.cc` also has
+    (re-encrypt to ingress-nginx over the reverse tunnel); `hermes.metoda.cc` also has
     split-horizon DNS to the ingress nodes on the LAN. LLM is DeepSeek
     `deepseek-chat`; credentials `secret/hermes` -> ESO. Telegram is blocked
-    by the home ISP, so the gateway goes through `socks5://10.200.0.1:1080`
-    (adminvps danted over WireGuard; role `adminvps_danted`). Applied and
-    verified 2026-10-23.
+    by the home ISP, so the gateway used `socks5://10.200.0.1:1080`
+    (adminvps danted over WireGuard). After WireGuard was retired that path
+    died, so since 2026-11-14 `TELEGRAM_PROXY` points at the Xray SOCKS client
+    on k8s-node-1 (`socks5://10.10.120.101:1081`; role `xray_tunnel`, which
+    binds the node's VLAN120 address for in-cluster egress). Applied and
+    verified 2026-10-23; egress re-verified 2026-11-14.
     **GitLab (2026-11-08, applied):** GitLab CE 19.5.3 (Helm chart 10.5.4) in
     ns `gitlab`, canonical host `https://gitlab.metoda.cc` (split-horizon on
     the LAN, public via adminvps Traefik/LE; verified readiness + Keycloak
@@ -445,8 +434,8 @@ kubernetes:
     (buckets created by `tower_storage`); only Gitaly keeps an RWO tower
     iSCSI LUN (`gitlab-gitaly`, lun 6, 50 GiB sparse). SSO via Keycloak realm
     `tower`, client `gitlab`. SSH clone is on port **30222**
-    (`gitlab-gitlab-shell` NodePort; adminvps Traefik TCP 30222 -> nodes over
-    WG; port 22 is the node/admin sshd). Bundled cert-manager/nginx/Prometheus
+    (`gitlab-gitlab-shell` NodePort; adminvps Traefik TCP 30222 -> nodes via
+    the reverse tunnel; port 22 is the node/admin sshd). Bundled cert-manager/nginx/Prometheus
     and the registry, KAS, Pages and Runner are disabled. Manifests:
     `k8s/apps/gitlab/`; runbook: `docs/gitlab/README.md`. Secrets come from
     Vault `secret/gitlab`; Ansible needs the matching `GITLAB_*` env vars.
@@ -466,14 +455,15 @@ kubernetes:
     the Keenetic, whose port 3 to proxmox is a VLAN30+VLAN120 trunk. The main
     router's port 5 trunk is unused; the main router routes the server/cluster
     subnets via the Keenetic and now reaches them from the LAN directly
-    (archasus → `kubectl`, tower, proxmox). Also reachable from `adminvps` over
-    the WireGuard tunnel (ingress, nodes, API :6443).
+    (archasus → `kubectl`, tower, proxmox). Public ingress reaches them through
+    the Xray/SSH reverse tunnel; `adminvps` has no direct route to the nodes.
 
 open_questions:
   - "metoda.cc: DNS is now IaC (`tofu/dns`, ADR-0005). Consider switching Traefik to DNS-01 + a wildcard certificate now that the Timeweb Cloud API manages the zone."
   - "Keycloak OIDC on the public host: KC_HOSTNAME=https://auth.metoda.cc + split-horizon DNS (router dnsmasq) + oauth2-proxy/Vault issuer URLs codified and applied; verify public login end-to-end. Which services are public vs VPN-only?"
-  - "Keenetic Omni II (OpenWrt server router): the interface/keys, VLAN120 DHCP pool, routes, wan→lan forwarding and split-horizon peering are hand-configured (the temporary WG watchdog was removed 2026-11-14). How should the rest be managed by IaC, and where should the WG private key live (Vault)?"
-  - "WireGuard transport is DPI-dropped by the home provider (2026-11-13); public ingress now uses the Xray VLESS Reality + SSH reverse tunnel on k8s-node-1. Decide whether to keep WG at all, move the tunnel into k8s/GitOps (instead of a hand-installed systemd service), and how to alert if the tunnel dies."
+  - "Keenetic Omni II (OpenWrt server router): the VLANs, VLAN120 DHCP pool, routes, wan→lan forwarding and split-horizon peering are hand-configured. How should the box be managed by IaC? (WireGuard was retired and removed 2026-11-14.)"
+  - "Hermes Telegram egress now uses the Xray SOCKS client on k8s-node-1 (10.10.120.101:1081). Consider replacing the host-level systemd tunnel with a k8s-native proxy so the cluster does not depend on one node's service."
+  - "Move the Xray/SSH reverse tunnel from hand-installed systemd services into k8s/GitOps, and decide how to alert if the tunnel dies."
   - "Why does archasus hold two IPv4 leases (.204 and .205) on one NIC?"
   - "What runs on the biqu* hosts (.161/.202/.203)? 3D printer controllers?"
   - "How should tower's /mnt/raid1 (native mdadm RAID1, no snapshots) and proxmox VMs be backed up?"

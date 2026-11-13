@@ -1,5 +1,5 @@
 ---
-# Installs the local public/WireGuard health probe on archasus (the Ansible
+# Installs the local public-path health probe on archasus (the Ansible
 # controller). Kept out of site.yml because it configures the controller, not
 # a remote host: run it explicitly.
 #
@@ -7,7 +7,7 @@
 #   # with alerting (healthchecks.io ping URL, which is a secret):
 #   ansible-playbook ansible/playbooks/monitoring.yml \
 #     -e archasus_monitoring_healthchecks_ping_url='https://hc-ping.com/<uuid>'
-- name: archasus — public-path + WireGuard health probe
+- name: archasus — public-path health probe
   hosts: archasus
   become: true
   roles:

@@ -150,10 +150,11 @@ _Updated: 2026-10-15_
 - [ ] disk replacement plan (~3.6 y power-on on both NDSs)
 - [ ] monitoring/alerting (mdadm MAILADDR already set). Codified probe:
       `scripts/public-health.sh` + `ansible/playbooks/monitoring.yml` (public
-      vhosts through adminvps + WireGuard handshake; optional healthchecks.io
-      ping URL) — apply with `ansible-playbook ansible/playbooks/monitoring.yml`.
+      vhosts through adminvps + the Xray/SSH tunnel services; optional
+      healthchecks.io ping URL) — apply with
+      `ansible-playbook ansible/playbooks/monitoring.yml`.
 
-## Phase 6 — external access (public VPS + WireGuard)
+## Phase 6 — external access (public VPS + Xray reverse tunnel)
 
 Design: **ADR-0003**. The home WAN is CGNAT (no public IPv4) → a public VPS
 (`adminvps`) is the relay; the **Keenetic Omni II** (OpenWrt) is the home WG
@@ -162,15 +163,15 @@ WireGuard transport (DPI), so public ingress uses the **Xray VLESS Reality +
 SSH reverse tunnel** from k8s-node-1 instead (see CHANGELOG).
 
 - [x] Confirm CGNAT (`100.64.48.0/10`) → port-forwarding impossible
-- [x] `adminvps` (`78.17.99.16`) as WireGuard **server** (`10.200.0.1`, udp 51820);
-      `arch` NOPASSWD sudo
+- [x] `adminvps` (`78.17.99.16`) as WireGuard **server** (`10.200.0.1`, udp 51820)
+      — **retired/removed 2026-11-14**; `arch` NOPASSWD sudo
 - [x] Keenetic Omni II → OpenWrt **server router**: LAN `192.168.30.0/24`, VLAN30
       (proxmox) bridged in, VLAN120 (k8s) = `10.10.120.1`; `kmod-wireguard` +
       `wireguard-tools` installed
 - [x] Main router switch port 3 `VLAN30 → LAN`; Keenetic WAN = DHCP `192.168.1.216`
 - [x] WireGuard **client** on the Keenetic (`10.200.0.2`); home nets routed over
       the tunnel — verified `adminvps` reaches tower / proxmox / k8s nodes /
-      ingress / API `:6443`
+      ingress / API `:6443` (WG removed 2026-11-14; transport DPI-blocked)
 - [x] `tower` address pinned to `.200` (DHCP reservation on the Keenetic)
 - [x] **Traefik** reverse proxy on `adminvps` (`:80`/`:443`) — role
       `adminvps_traefik` (Docker Compose, Traefik v3.7.14), 2026-10-15
@@ -178,6 +179,10 @@ SSH reverse tunnel** from k8s-node-1 instead (see CHANGELOG).
       `ansible/roles/xray_tunnel` runs `xray-client` + `xray-reverse-tunnel` on
       k8s-node-1; Traefik backends are `127.0.0.1:10443` / `:12222`; mwan3
       policy `wan_wanb`. Verified public 10/10 and SSH 10/10.
+- [x] **WireGuard retired (2026-11-14, ADR-0006):** removed `wg0` + keys and
+      the wireguard packages on both ends; deleted the UFW `51820/udp` and
+      `10.200.0.0/24` rules; danted/x-ui ports are now SSH-tunnel-only.
+      Hermes `TELEGRAM_PROXY` now points at the Xray SOCKS on k8s-node-1.
 - [x] **domain**: `metoda.cc` registered at Timeweb (2026-10-15)
 - [x] **DNS**: zone managed **by hand** in the Timeweb hosting panel
       (`hosting.timeweb.ru/domains`) — the Timeweb Cloud API does not see it, so

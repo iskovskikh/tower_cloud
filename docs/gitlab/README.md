@@ -7,7 +7,7 @@ by the Flux-synced manifests under [`k8s/apps/gitlab/`](../../k8s/apps/gitlab/).
 
 ```
 browser ──https──> adminvps Traefik (Let's Encrypt)
-                     │  wg0, re-encrypt
+                     │  reverse tunnel, re-encrypt
                      ▼
                  ingress-nginx (tower-ca)
                      │
@@ -30,8 +30,8 @@ chart's Envoy Gateway. The cluster reuses the existing ingress-nginx,
 cert-manager/tower-ca and external services.
 
 SSH clone uses **port 30222**: `gitlab-shell` is a NodePort (30222) on the k8s
-nodes, and adminvps Traefik forwards public `gitlab.metoda.cc:30222` to it over
-WireGuard. Port 22 is the node/admin sshd, so it cannot serve GitLab. Clone URL:
+nodes, and adminvps Traefik forwards public `gitlab.metoda.cc:30222` to it through
+the SSH reverse tunnel (the WireGuard path was retired 2026-11-14). Port 22 is the node/admin sshd, so it cannot serve GitLab. Clone URL:
 `ssh://git@gitlab.metoda.cc:30222/group/repo.git`.
 
 ## Prerequisites (one-time, out of band)

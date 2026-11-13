@@ -1,5 +1,5 @@
 # TLS for the GitLab Ingress. Public traffic terminates at adminvps Traefik
-# (Let's Encrypt) and is re-encrypted to ingress-nginx over WireGuard; on the
+# (Let's Encrypt) and is re-encrypted to ingress-nginx through the reverse tunnel; on the
 # LAN the same hostname (split-horizon DNS) hits ingress-nginx directly, so the
 # internal certificate is tower-ca.
 apiVersion: cert-manager.io/v1

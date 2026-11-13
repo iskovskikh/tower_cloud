@@ -30,7 +30,7 @@ http:
       insecureSkipVerify: true
 
 # GitLab SSH: a single non-TLS TCP entry point (:2222) forwarded to the
-# gitlab-shell NodePort on the k8s nodes over WireGuard.
+# gitlab-shell NodePort through the SSH reverse tunnel.
 tcp:
   routers:
     gitlab-ssh:

@@ -127,6 +127,12 @@
     - xray-client
     - xray-reverse-tunnel
 
+# The config/service templates notify a restart handler, which normally runs at
+# the end of the play — after these checks. Flush it first so the checks test the
+# newly rendered config instead of the previous process.
+- name: Apply pending restarts before verifying
+  ansible.builtin.meta: flush_handlers
+
 - name: Verify the Xray SOCKS path works
   ansible.builtin.command:
     cmd: >-

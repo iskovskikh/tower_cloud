@@ -2,20 +2,20 @@
 # adminvps_hardening — reduce the public attack surface of the VPS.
 #
 # The VPS is the only host reachable from the internet (the home network is
-# behind CGNAT and reached through WireGuard). This role:
+# behind CGNAT). This role:
 #   * restricts SSH to key authentication (no root password, no passwords);
 #   * installs a default-deny UFW policy with an explicit public allowlist;
-#   * makes the admin/proxy control ports reachable only from the WireGuard
-#     network (danted, x-ui panel/subscription);
+#   * leaves the admin/proxy control ports closed (danted, x-ui panel and
+#     subscription are reachable only through an SSH tunnel, `ssh -L`);
 #   * runs fail2ban for sshd, banning with UFW.
 #
 # It intentionally does NOT change x-ui/danted/hysteria configuration. Their
-# daemons still listen on 0.0.0.0; the firewall is what moves them behind the
-# tunnel. Use WireGuard or an SSH tunnel (`ssh -L`) to reach the x-ui panel.
+# daemons still listen on 0.0.0.0; the firewall is what keeps them private.
 #
 # Before applying, keep at least one working SSH key for the admin user.
 #
-# This role only adds UFW rules; it does not delete pre-existing allow rules.
+# The role adds rules and removes the retired WireGuard rules listed in
+# `adminvps_hardening_retired_ufw_rules` (WireGuard was retired 2026-11-14).
 # On adminvps UFW was inactive and ruleless at the 2026-10-23 audit.
 #
 # Docker: Traefik uses host networking, so its :80/:443 are covered by the UFW
@@ -32,19 +32,17 @@ adminvps_hardening_public_tcp_ports:
   - 36243   # Xray VLESS Reality proxy endpoint
 adminvps_hardening_public_udp_ports:
   - 443     # Hysteria 2
-  - 51820   # WireGuard server
 
-# Admin/control ports that stay reachable only from the WireGuard network.
-#   1080  danted SOCKS (currently filtered by the provider, but do not rely on it)
-#   2096  x-ui subscription endpoint
-#   12267 x-ui web panel (plain HTTP; use WG or an SSH tunnel)
-# Remove 2096 here if clients fetch subscription URLs from the public internet;
-# static client configurations keep working either way.
-adminvps_hardening_wg_cidr: 10.200.0.0/24
-adminvps_hardening_wg_only_tcp_ports:
-  - 1080
-  - 2096
-  - 12267
+# Rules from earlier revisions that restricted admin/proxy control ports to the
+# WireGuard network. WireGuard was retired on 2026-11-14 (the home provider
+# DPI-drops its transport), so the role deletes these while reconciling.
+# After removal the ports (1080 danted, 2096 x-ui subscription, 12267 x-ui
+# panel) have no allow rule and stay closed; reach them with `ssh -L`.
+adminvps_hardening_retired_ufw_rules:
+  - {port: 51820, proto: udp, from: ""}
+  - {port: 1080, proto: tcp, from: "10.200.0.0/24"}
+  - {port: 2096, proto: tcp, from: "10.200.0.0/24"}
+  - {port: 12267, proto: tcp, from: "10.200.0.0/24"}
 
 # SSH policy. `prohibit-password` still allows root with a key; set to `no` if
 # root should never log in directly (arch has passwordless sudo today).
@@ -63,4 +61,3 @@ adminvps_hardening_fail2ban_maxretry: 5
 adminvps_hardening_fail2ban_ignoreip:
   - 127.0.0.1/8
   - "::1"
-  - "{{ adminvps_hardening_wg_cidr }}"

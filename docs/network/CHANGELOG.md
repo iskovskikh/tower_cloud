@@ -4,6 +4,67 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-14 — Hermes Telegram egress moved to the Xray SOCKS
+
+- **Why:** WireGuard was retired (entry below), and Hermes' `TELEGRAM_PROXY`
+  pointed at the now-dead `socks5://10.200.0.1:1080` (danted over WG). Telegram
+  is blocked from the home ISP, so Hermes needs a working proxy.
+- **Change:** the Xray VLESS Reality client on `k8s-node-1` now listens on the
+  node's VLAN120 address (`10.10.120.101:1081`) instead of loopback only
+  (`xray_tunnel_socks_host`), so in-cluster workloads can use it. Hermes'
+  `TELEGRAM_PROXY` is now `socks5://10.10.120.101:1081`.
+- **IaC:** `ansible/roles/xray_tunnel` defaults/templating unchanged apart from
+  the listen address; the role now flushes handlers before its checks (the
+  earlier "connection refused" was the verify task running against the old
+  process before the restart handler fired).
+- **Verified:** from the Hermes pod, SOCKS → `ifconfig.me` = `78.17.99.16` and
+  `api.telegram.org` answers 302; public vhosts still 200/302.
+- **Note:** the SOCKS listener has no auth and is reachable from VLAN120/LAN
+  (never the internet). It replaced a host-level WG path, so the cluster now
+  depends on one node's systemd service — a GitOps/k8s-native proxy remains an
+  open question.
+
+---
+
+## 2026-11-14 — WireGuard retired (transport is DPI-blocked)
+
+- **Why:** the home provider DPI-drops WireGuard *transport* packets —
+  handshakes pass, data does not (entries of 2026-11-13). The tunnel had been
+  useless since then; public ingress already runs over the Xray VLESS Reality +
+  SSH reverse tunnel from k8s-node-1 (ADR-0006).
+- **Keenetic:** removed the `wg0` interface and peer from `/etc/config/network`,
+  dropped `wg0` from the `lan` firewall zone, and removed `kmod-wireguard` +
+  `wireguard-tools`. No WG key remains on the box.
+- **adminvps:** disabled and removed `wg-quick@wg0` + `/etc/wireguard/wg0.conf`,
+  purged the wireguard packages, deleted the public `51820/udp` UFW rule and
+  the `10.200.0.0/24` admin-port exceptions. `danted` no longer listens on
+  `10.200.0.1`; its WireGuard pass rule is gone.
+- **Consequence:** `1080` (danted), `2096`/`12267` (x-ui) are now closed —
+  reach them with `ssh -L`. **Hermes' Telegram egress** used
+  `socks5://10.200.0.1:1080`; it was repointed to the Xray SOCKS client on
+  k8s-node-1 (entry above).
+- **IaC/docs:** the hardening role now deletes the retired UFW rules; the
+  danted role drops the WG listener/allowance; Traefik comments, README and
+  inventory are updated; the `10.200.0.0/24` subnet is removed. ADR-0003 is
+  superseded by ADR-0006.
+
+---
+
+## 2026-11-14 — WAN provider labels recorded (ZenCom / DomOnline)
+
+- **Why:** LuCI shows only the UCI section names (`wan`, `wan2`), so there was
+  no reminder which link belongs to which ISP.
+- **Change:** `router_openwrt` now writes a legend comment at the top of
+  `/etc/config/network` (`wan` = `eth0.2` = ZenCom primary, `wan2` = `eth0.3`
+  = DomOnline failover). `uci commit network` drops comments, so the role
+  re-inserts the block after its own commits; the names themselves are
+  unchanged (renaming would touch firewall, mwan3 and the conntrack flush
+  list). The mapping is also recorded in `inventory.yaml`.
+- **Note:** this is a comment in the config file, not a label in the LuCI
+  interface list — stock LuCI has no description field per interface.
+
+---
+
 ## 2026-11-14 — Keenetic WG watchdog removed (WG transport is DPI-blocked)
 
 - **Why:** public ingress now runs over the Xray tunnel; WireGuard transport

@@ -14,14 +14,16 @@ by both humans and AI agents.
 
 The home WAN is **CGNAT** (main router `eth0.2` = `100.64.48.134/20`), so there
 is **no public IPv4** and inbound port-forwarding is impossible. External access
-therefore runs through a public relay: a VPS (**`adminvps`**) holds a
-**WireGuard** tunnel to the **Keenetic Omni II** (reflashed to OpenWrt), which
-is the router for the server segment.
+therefore runs through a public relay: a VPS (**`adminvps`**). Public ingress
+reaches the cluster through an **Xray VLESS Reality + SSH reverse tunnel** from
+`k8s-node-1`. (It replaced a WireGuard tunnel whose transport the home provider
+DPI-drops; WireGuard was retired 2026-11-14.) The **Keenetic Omni II**
+(reflashed to OpenWrt) is the router for the server segment.
 
 ```mermaid
 flowchart TB
     INET([Internet / ISP]) --> R["router · 192.168.1.1<br/>OpenWrt · DHCP/DNS<br/>WAN = CGNAT 100.64.48.0/20"]
-    INET --> VPS["adminvps · 78.17.99.16<br/>public VPS · WireGuard server<br/>10.200.0.1"]
+    INET --> VPS["adminvps · 78.17.99.16<br/>public VPS · Traefik + Xray endpoint"]
 
     subgraph LAN["LAN — 192.168.1.0/24"]
         AS["archasus · .204/.205"]
@@ -31,7 +33,7 @@ flowchart TB
     R --- LAN
 
     subgraph SRV["Server segment — 192.168.30.0/24"]
-        KE["keenetic-omni-2 · 192.168.30.1<br/>OpenWrt · WireGuard client 10.200.0.2"]
+        KE["keenetic-omni-2 · 192.168.30.1<br/>OpenWrt · server-segment router"]
         TWR["tower · 192.168.30.200"]
         PVE["proxmox · 192.168.30.201"]
         K8S["k8s-node-1..4 · 10.10.120.101-104"]
@@ -40,23 +42,23 @@ flowchart TB
         KE -. "VLAN120" .-> K8S
     end
     R -->|"port 3 (LAN)"| KE
-    VPS -. "WireGuard 10.200.0.0/24" .-> KE
+    VPS -. "Xray Reality + SSH reverse" .-> K8S
 ```
 
 ```
-Internet/ISP (CGNAT) ──── adminvps 78.17.99.16 (WG server 10.200.0.1)
-        │                         ┊  WireGuard 10.200.0.0/24
-        │                         ┊
+Internet/ISP (CGNAT) ──── adminvps 78.17.99.16 (Traefik + Xray endpoint)
+        │                         ┊  Xray VLESS Reality + SSH reverse
+        │                         ┊  (outbound from k8s-node-1)
    router 192.168.1.1             ┊
         │ LAN 192.168.1.0/24      ┊
-        └─ port 3 (LAN) ── keenetic-omni-2 192.168.30.1 (WG client 10.200.0.2)
+        └─ port 3 (LAN) ── keenetic-omni-2 192.168.30.1
                               ├── 192.168.30.0/24 : tower .200, proxmox .201
                               └── VLAN120 10.10.120.0/24 : k8s-node-1..4
 ```
 
 External data path (front end **live**; domain **`metoda.cc`**):
-`Internet → adminvps:443 (**Traefik** + Let's Encrypt) → WireGuard → Keenetic →
-ingress-nginx (VLAN120) → k8s apps`.
+`Internet → adminvps:443 (**Traefik** + Let's Encrypt) → Xray VLESS Reality +
+SSH reverse tunnel → ingress-nginx (VLAN120) → k8s apps`.
 
 **DNS:** `metoda.cc` is delegated to Timeweb's nameservers (`ns1/2.timeweb.ru`,
 `ns3/4.timeweb.org`). Since 2026-10-19 the zone is visible to the Timeweb Cloud
@@ -72,7 +74,6 @@ API (zone id `25051187-metoda.cc`) and its `A` records are managed as code in
 | `192.168.1.0/24` | LAN — workstations, phones, IoT | `192.168.1.1` (router) | yes |
 | `192.168.30.0/24` | Server segment (Keenetic LAN) | `192.168.30.1` (Keenetic) | yes |
 | `10.10.120.0/24` | k8s nodes (VLAN 120, isolated L2) | `10.10.120.1` (Keenetic) | ❓ static |
-| `10.200.0.0/24` | WireGuard uplink (`adminvps` ↔ Keenetic) | `10.200.0.1` (adminvps) | no |
 | `fde7:823d:5636::/64` | IPv6 ULA advertised by the router | `fde7:823d:5636::1` | RA |
 
 The server segment is no longer on the main router: the Keenetic Omni II owns it
@@ -85,8 +86,8 @@ separate network.
 | Host | IP | Role | Status |
 |---|---|---|---|
 | router | `192.168.1.1` | OpenWrt gateway/DHCP/DNS (WAN = CGNAT) | up |
-| adminvps | `78.17.99.16` | public VPS · WireGuard server · proxy box | up |
-| keenetic-omni-2 | `192.168.30.1` | OpenWrt server router · WG client | up |
+| adminvps | `78.17.99.16` | public VPS · Traefik + Xray endpoint · proxy box | up |
+| keenetic-omni-2 | `192.168.30.1` | OpenWrt server router | up |
 | archasus | `192.168.1.204` + `.205` | Arch workstation, docker host | up |
 | tower | `192.168.30.200` | NAS / media / object storage | up |
 | proxmox | `192.168.30.201` | Proxmox VE hypervisor | up |
@@ -99,22 +100,21 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 ## Services
 
 ### adminvps — `78.17.99.16` (public)
-- `22` ssh (key-only since 2026-10-23) · `443/udp` hysteria ·
-  `51820/udp` WireGuard
+- `22` ssh (key-only since 2026-10-23) · `443/udp` hysteria
 - `1080` danted SOCKS · `2096` x-ui subscription · `12267` x-ui panel (plain
-  HTTP, random path) — **WireGuard-only** since 2026-10-23
+  HTTP, random path) — **closed**; reach them with `ssh -L` (they were
+  WireGuard-only until WG was retired 2026-11-14)
 - `36243` Xray VLESS Reality (public proxy endpoint)
 - `80`/`443` tcp **Traefik** (Let's Encrypt HTTP-01, Docker Compose) — fronts
-  `cloud.` / `auth.` / `hermes.` → home ingress-nginx over WireGuard
+  `cloud.` / `auth.` / `hermes.` → home ingress-nginx over the Xray/SSH tunnel
 - **2026-10-23 audit + hardening:** `adminvps` is the only public host. Role
   `adminvps_hardening` applied: key-only SSH (`PasswordAuthentication no`,
   `PermitRootLogin prohibit-password`), default-deny UFW with public
-  `22/80/443/36243 tcp` + `443/51820 udp`, fail2ban for sshd, and
-  `1080/2096/12267` only from `10.200.0.0/24`. See CHANGELOG.
+  `22/80/443/36243 tcp` + `443 udp`, fail2ban for sshd, and
+  `1080/2096/12267` closed (no allow rule). See CHANGELOG.
 
 ### keenetic-omni-2 — `192.168.30.1` (OpenWrt 23.05.3)
 - `22` dropbear · `80`/`443` LuCI
-- WireGuard **client** to `adminvps` (`10.200.0.2`)
 - Switch: port 0 = WAN, ports 1-4 = LAN; port 3 = proxmox (VLAN30+VLAN120 trunk)
 
 ### tower — `192.168.30.200`
@@ -129,7 +129,10 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
   `https://opencloud.k8s.lan`, `https://vault.k8s.lan`; Keycloak's canonical host
   is the public `auth.metoda.cc` (split-horizon → ingress-nginx internally);
   Hermes is public at `https://hermes.metoda.cc`
-- Reachable from `adminvps` over the WireGuard tunnel (ingress, nodes, API `:6443`)
+- Public ingress reaches these through the Xray/SSH reverse tunnel from
+  `k8s-node-1`; `adminvps` has no direct route to the nodes.
+- `k8s-node-1` also exposes the Xray SOCKS proxy on `10.10.120.101:1081`
+  (VLAN120 only) for in-cluster egress — Hermes' Telegram proxy uses it.
 
 ### router — `192.168.1.1`
 - `22` dropbear ssh · `80`/`443` LuCI

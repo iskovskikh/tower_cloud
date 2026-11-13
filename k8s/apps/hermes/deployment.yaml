@@ -68,10 +68,13 @@ spec:
               value: /ca-bundle/ca-certificates.crt
             - name: CURL_CA_BUNDLE
               value: /ca-bundle/ca-certificates.crt
-            # Telegram is unreachable from the home ISP; egress via the
-            # adminvps danted SOCKS proxy over WireGuard (role adminvps_danted).
+            # Telegram is unreachable from the home ISP. Egress goes through the
+            # Xray VLESS Reality SOCKS client on k8s-node-1 (role xray_tunnel),
+            # which listens on the node's VLAN120 address. This replaced the
+            # adminvps danted proxy over WireGuard after WireGuard was retired
+            # on 2026-11-14 (DPI-blocked transport).
             - name: TELEGRAM_PROXY
-              value: "socks5://10.200.0.1:1080"
+              value: "socks5://10.10.120.101:1081"
           envFrom:
             - secretRef:
                 name: hermes-secrets

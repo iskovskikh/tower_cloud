@@ -1,6 +1,7 @@
 # ADR-0003: External access via a public VPS + WireGuard (no port-forwarding)
 
-- **Status:** Accepted — networking done; Traefik front end **live** (2026-10-15)
+- **Status:** **Superseded by ADR-0006** (2026-11-14) — WireGuard was retired
+  because the home provider DPI-drops its transport. Kept for history.
 - **Date:** 2026-10-14
 - **Deciders:** owner + agent
 

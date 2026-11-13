@@ -1,7 +1,7 @@
 ---
-# adminvps — public Traefik front end (ADR-0003/0004). Docker Compose service
-# that terminates Let's Encrypt TLS and proxies named hostnames to the home
-# ingress-nginx over the WireGuard tunnel.
+# adminvps — public Traefik front end (ADR-0003/0004, ADR-0006). Docker Compose
+# service that terminates Let's Encrypt TLS and proxies named hostnames to the
+# home ingress-nginx over the Xray/SSH reverse tunnel.
 
 - name: Install Docker Engine and the Compose v2 plugin
   ansible.builtin.apt:
