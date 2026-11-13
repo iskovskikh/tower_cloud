@@ -183,6 +183,9 @@ SSH reverse tunnel** from k8s-node-1 instead (see CHANGELOG).
       the wireguard packages on both ends; deleted the UFW `51820/udp` and
       `10.200.0.0/24` rules; danted/x-ui ports are now SSH-tunnel-only.
       Hermes `TELEGRAM_PROXY` now points at the Xray SOCKS on k8s-node-1.
+- [x] **Xray transport hardening (2026-11-14):** `firefox` fingerprint (the
+      `chrome` PQ ClientHello is DPI-stalled) and Reality on public `:443` via
+      Traefik SNI passthrough; SOCKS 12/12, public ingress 10/10.
 - [x] **domain**: `metoda.cc` registered at Timeweb (2026-10-15)
 - [x] **DNS**: zone managed **by hand** in the Timeweb hosting panel
       (`hosting.timeweb.ru/domains`) — the Timeweb Cloud API does not see it, so

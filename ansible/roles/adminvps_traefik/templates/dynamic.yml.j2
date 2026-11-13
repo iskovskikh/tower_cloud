@@ -38,6 +38,17 @@ tcp:
         - gitlab-ssh
       rule: "HostSNI(`*`)"
       service: gitlab-ssh
+    # VLESS Reality shares public :443 with the HTTPS front end. The client uses
+    # the camouflage SNI; Traefik passes that TLS stream through untouched to
+    # the Xray inbound (which does its own Reality handshake). All other SNI
+    # values fall through to the HTTP routers above and are terminated here.
+    xray-reality:
+      entryPoints:
+        - websecure
+      rule: "HostSNI(`{{ adminvps_traefik_xray_reality_sni }}`)"
+      service: xray-reality
+      tls:
+        passthrough: true
   services:
     gitlab-ssh:
       loadBalancer:
@@ -45,3 +56,7 @@ tcp:
 {% for server in adminvps_traefik_gitlab_ssh_servers %}
           - address: "{{ server }}"
 {% endfor %}
+    xray-reality:
+      loadBalancer:
+        servers:
+          - address: "{{ adminvps_traefik_xray_reality_backend }}"

@@ -4,6 +4,31 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-14 — Xray handshakes stalled by DPI: firefox fingerprint + :443
+
+- **Symptom:** once Hermes used the Xray SOCKS, most *new* VLESS connections
+  stalled (~1/10 succeeded) while the established SSH reverse tunnel kept
+  working. Captures showed the client's TLS ClientHello split over two TCP
+  segments and the second segment never acknowledged; TCP retransmitted the
+  first 1448-byte segment without success.
+- **Root cause:** the `chrome` uTLS fingerprint sends a ~1.8 KB ClientHello
+  (post-quantum key share) that spans two segments; the home ISP's DPI stalls
+  that handshake. The same handshake is fine from the VPS to itself, so the
+  server and Reality keys are correct.
+- **Fix 1 — fingerprint:** the client uses `firefox` (single-segment
+  ClientHello). Measured 8/8 for both `firefox` and `safari` vs 1–2/10 for
+  `chrome`; set 12/12 after rollout.
+- **Fix 2 — public :443:** the ISP also throttles TLS on non-standard ports, so
+  Reality now rides `78.17.99.16:443`. Traefik peeks the TLS SNI and passes
+  `www.oracle.com` through to `127.0.0.1:36243` (`tls.passthrough`); all other
+  SNI is terminated normally. Direct `:36243` stays as a fallback.
+- **IaC:** `xray_tunnel_fingerprint: firefox`, `xray_tunnel_server_port: 443`;
+  `adminvps_traefik_xray_reality_sni/backend` + a TCP router in `dynamic.yml`.
+- **Verified:** SOCKS 12/12, public ingress 10/10, Hermes
+  `/api/status` → telegram `state: connected`.
+
+---
+
 ## 2026-11-14 — Hermes Telegram egress moved to the Xray SOCKS
 
 - **Why:** WireGuard was retired (entry below), and Hermes' `TELEGRAM_PROXY`

@@ -29,8 +29,8 @@ needs an outbound-only path from home.
 
 2. **Public ingress runs over Xray VLESS Reality + an SSH reverse tunnel.**
    - `k8s-node-1` runs `xray-client` (VLESS Reality client, SOCKS on
-     `127.0.0.1:1081`) towards the existing x-ui inbound on
-     `adminvps:36243`.
+     `10.10.120.101:1081`) towards the existing x-ui inbound, reached on
+     `adminvps:443` through Traefik (see item 5).
    - `xray-reverse-tunnel` keeps an SSH connection to `adminvps` **through that
      SOCKS proxy** and binds `127.0.0.1:10443 → 127.0.0.1:443` (ingress-nginx)
      and `127.0.0.1:12222 → 127.0.0.1:30222` (GitLab shell) on the VPS.
@@ -44,9 +44,17 @@ needs an outbound-only path from home.
    WireGuard-network allow rule; they are reachable only through an SSH tunnel
    (`ssh -L`).
 
-4. **IaC:** `ansible/roles/xray_tunnel` + `playbooks/xray-tunnel.yml` deploy the
-   two node-1 services; `adminvps_traefik` backends are the loopback ports;
-   `adminvps_hardening` deletes the retired WireGuard rules.
+4. **The transport rides public :443.** The home provider stalls TLS on
+   non-standard ports and stalls the large post-quantum ClientHello sent by the
+   `chrome` fingerprint. The client therefore uses the `firefox` fingerprint
+   (single-segment ClientHello), and Traefik peeks the TLS SNI: the camouflage
+   name (`www.oracle.com`) is passed through untouched to the x-ui Reality
+   inbound on `127.0.0.1:36243`, while every other SNI is terminated normally.
+   Direct `:36243` remains as a fallback.
+5. **IaC:** `ansible/roles/xray_tunnel` + `playbooks/xray-tunnel.yml` deploy the
+   two node-1 services; `adminvps_traefik` backends are the loopback ports and
+   hold the SNI-passthrough router; `adminvps_hardening` deletes the retired
+   WireGuard rules.
 
 ## Consequences
 
@@ -58,7 +66,8 @@ needs an outbound-only path from home.
 - **Hermes' Telegram egress moved.** It used `socks5://10.200.0.1:1080`
   (danted over WireGuard). That path is gone; `TELEGRAM_PROXY` now points at
   the Xray SOCKS client on `k8s-node-1` (`10.10.120.101:1081`, VLAN120), which
-  binds the node address for in-cluster egress.
+  binds the node address for in-cluster egress. Verified stable (12/12) after
+  the fingerprint change.
 - The Xray/SSH services are hand-installed systemd units on node-1, not GitOps
   yet; moving them into the cluster and alerting on their death remain open.
 - The `10.200.0.0/24` WireGuard subnet is gone; `danted` no longer listens on

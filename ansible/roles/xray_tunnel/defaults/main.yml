@@ -18,10 +18,17 @@
 # Everything listens on loopback; nothing new is exposed publicly.
 
 xray_tunnel_server: 78.17.99.16
-xray_tunnel_server_port: 36243
+# Public :443 (not x-ui's 36243): the home provider throttles TLS on non-standard
+# ports. Traefik peeks the SNI (`xray_tunnel_server_name`) and passes the stream
+# through to the x-ui inbound on 127.0.0.1:36243 (role adminvps_traefik).
+xray_tunnel_server_port: 443
 xray_tunnel_uuid: ""                 # required (secret) — pass out-of-band
 xray_tunnel_server_name: www.oracle.com
-xray_tunnel_fingerprint: chrome
+# NOT `chrome`: its ClientHello now carries a post-quantum key share and is
+# ~1.8 KB, split over two TCP segments; the home ISP's DPI stalls those
+# handshakes (observed 2026-11-14: chrome ~1/10 success, firefox/safari 8/8).
+# `firefox` keeps the ClientHello in a single segment and works reliably.
+xray_tunnel_fingerprint: firefox
 # Public key of the server's Reality key pair (safe to commit; not a secret).
 xray_tunnel_public_key: "xsuZ_5wQz9v8_qd_wKdQyaeIrMuEnd4EpCh_HwPUjxg"
 xray_tunnel_short_id: "2f3f8321"

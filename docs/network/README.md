@@ -104,7 +104,8 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 - `1080` danted SOCKS · `2096` x-ui subscription · `12267` x-ui panel (plain
   HTTP, random path) — **closed**; reach them with `ssh -L` (they were
   WireGuard-only until WG was retired 2026-11-14)
-- `36243` Xray VLESS Reality (public proxy endpoint)
+- `36243` Xray VLESS Reality (direct fallback; normally reached through
+  Traefik `:443`, which passes the `www.oracle.com` SNI through untouched)
 - `80`/`443` tcp **Traefik** (Let's Encrypt HTTP-01, Docker Compose) — fronts
   `cloud.` / `auth.` / `hermes.` → home ingress-nginx over the Xray/SSH tunnel
 - **2026-10-23 audit + hardening:** `adminvps` is the only public host. Role
@@ -132,7 +133,9 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 - Public ingress reaches these through the Xray/SSH reverse tunnel from
   `k8s-node-1`; `adminvps` has no direct route to the nodes.
 - `k8s-node-1` also exposes the Xray SOCKS proxy on `10.10.120.101:1081`
-  (VLAN120 only) for in-cluster egress — Hermes' Telegram proxy uses it.
+  (VLAN120 only) for in-cluster egress — Hermes' Telegram proxy uses it. The
+  client uses the `firefox` TLS fingerprint: `chrome` sends a larger
+  post-quantum ClientHello that the home ISP's DPI stalls.
 
 ### router — `192.168.1.1`
 - `22` dropbear ssh · `80`/`443` LuCI

@@ -39,3 +39,11 @@ adminvps_traefik_ingress_servers:
 # ~/.ssh/config).
 adminvps_traefik_gitlab_ssh_servers:
   - 127.0.0.1:12222
+
+# The home provider throttles TLS on non-standard ports, so the Xray VLESS
+# Reality transport also runs on public :443. Traefik peeks the TLS SNI and
+# passes the camouflage name through untouched to the Xray inbound; every other
+# SNI is terminated and served by the HTTP routers. The Xray serverName must
+# match `xray_tunnel_server_name` in the xray_tunnel role.
+adminvps_traefik_xray_reality_sni: "www.oracle.com"
+adminvps_traefik_xray_reality_backend: "127.0.0.1:36243"
