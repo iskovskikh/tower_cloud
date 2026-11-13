@@ -87,6 +87,17 @@ router_openwrt_dns_addresses:
   - "/gitlab.metoda.cc/10.10.120.103"
   - "/gitlab.metoda.cc/10.10.120.104"
 
+# --- WAN providers (legend in /etc/config/network) --------------------------
+# LuCI shows only the UCI section name (`wan`/`wan2`), so the provider mapping
+# is kept as a comment block at the top of /etc/config/network. `uci commit
+# network` rewrites the file and drops comments, hence the role re-inserts the
+# block after its own commits. mwan3 keeps using `wan`/`wan2`: renaming the
+# sections would require touching firewall, mwan3 and the flush list below.
+router_openwrt_network_legend:
+  - "# WAN providers:"
+  - "#   wan  (eth0.2) = ZenCom    (primary, mwan3 metric 1)"
+  - "#   wan2 (eth0.3) = DomOnline (failover, 4G modem 192.168.1.119)"
+
 # --- mwan3 conntrack hygiene -------------------------------------------------
 # An established flow keeps its mwan3 fwmark and NAT mapping across a WAN
 # switch until its conntrack entry is removed. The 2026-11-13 incident (the WG
@@ -96,8 +107,8 @@ router_openwrt_dns_addresses:
 # conntrack table when a tracked interface emits one of the hotplug actions
 # listed in `flush_conntrack`.
 #
-# The Keenetic wg0 watchdog was removed on 2026-11-14: WG transport is
-# DPI-dropped and public ingress now uses the Xray tunnel (role xray_tunnel).
+# WireGuard was retired on 2026-11-14 (its transport is DPI-dropped by the
+# home provider); public ingress uses the Xray tunnel (role xray_tunnel).
 #
 # NOTE: this is a global flush, so it briefly resets every connection on the
 # event. Acceptable on WAN failover/recovery; do not add `always`.

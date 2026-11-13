@@ -80,6 +80,31 @@
   changed_when: "'CHANGED' in router_rt.stdout"
   notify: reload network
 
+- name: Label the WAN interfaces with their providers (network config legend)
+  ansible.builtin.raw: |
+    set -eu
+    missing=0
+    {% for line in router_openwrt_network_legend %}
+    grep -qxF '{{ line }}' /etc/config/network || missing=1
+    {% endfor %}
+
+    if [ "$missing" = 1 ]; then
+      legend="$(mktemp)"
+      merged="$(mktemp)"
+      {% for line in router_openwrt_network_legend %}
+      printf '%s\n' '{{ line }}' >> "$legend"
+      {% endfor %}
+      cp "$legend" "$merged"
+      awk 'NR==FNR { skip[$0]=1; next } !($0 in skip)' "$legend" /etc/config/network >> "$merged"
+      cat "$merged" > /etc/config/network
+      rm -f "$legend" "$merged"
+      echo CHANGED
+    else
+      echo OK
+    fi
+  register: router_wan_legend
+  changed_when: "'CHANGED' in router_wan_legend.stdout"
+
 - name: Allow LAN hairpin to the server segment
   ansible.builtin.raw: |
     set -eu
