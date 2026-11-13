@@ -1,0 +1,14 @@
+[Unit]
+Description=Xray VLESS Reality client (reverse-tunnel transport to adminvps)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/xray run -c /etc/xray/client.json
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,49 @@
+---
+- name: Install the public-health probe
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../scripts/public-health.sh"
+    dest: /usr/local/bin/public-health.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the systemd service
+  ansible.builtin.copy:
+    src: public-health.service
+    dest: /etc/systemd/system/public-health.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the systemd timer
+  ansible.builtin.copy:
+    src: public-health.timer
+    dest: /etc/systemd/system/public-health.timer
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the optional healthchecks.io env file
+  ansible.builtin.copy:
+    content: |
+      HEALTHCHECKS_PING_URL={{ archasus_monitoring_healthchecks_ping_url }}
+    dest: /etc/public-health.env
+    # The probe service runs as `arch` (to use its SSH key), so it must be able
+    # to read the file; it contains the healthchecks.io capability URL.
+    owner: arch
+    group: arch
+    mode: "0600"
+  when: archasus_monitoring_healthchecks_ping_url | length > 0
+
+- name: Remove the env file when no alerting sink is configured
+  ansible.builtin.file:
+    path: /etc/public-health.env
+    state: absent
+  when: archasus_monitoring_healthchecks_ping_url | length == 0
+
+- name: Enable and start the health timer
+  ansible.builtin.systemd_service:
+    name: public-health.timer
+    daemon_reload: true
+    enabled: true
+    state: started

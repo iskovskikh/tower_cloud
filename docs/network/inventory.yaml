@@ -1,7 +1,7 @@
 # tower_cloud / network inventory
 # Machine-readable source of truth. Keep this file in sync with reality.
 # Re-generate/verify with: scripts/recon.sh
-# Last verified: 2026-10-15 (see CHANGELOG.md)
+# Last verified: 2026-11-13 (see CHANGELOG.md)
 
 meta:
   site: home
@@ -118,6 +118,15 @@ hosts:
       2026-10-14: switch port 3 moved from VLAN30 (Servers) to VLAN1 (LAN) — the
       Keenetic Omni II's WAN now terminates there (DHCP 192.168.1.216) so its
       WAN subnet does not collide with the server segment.
+      2026-11-13: dual-WAN via mwan3 — `wan` = `eth0.2` (DHCP CGNAT
+      `100.64.48.134/20`) and `wan2` = `eth0.3` (DHCP `10.108.221.4/27` from
+      the 4G modem `192.168.1.119`). The primary WAN lost its upstream this day
+      (link/lease still up, gateway `100.64.48.1` unreachable); `ifdown/ifup
+      wan` restored it. **mwan3 policy is now `wan_wanb`** (primary `wan`, 4G
+      as failover) because `wan2` stalls TCP data after the handshake. Role
+      `router_openwrt` also flushes conntrack on WAN events. Public ingress no
+      longer uses WG (provider DPI drops WG transport) — it runs over the Xray
+      tunnel from k8s-node-1 (see the kubernetes notes).
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
       - {port: 80, proto: tcp, service: luci-http}
@@ -268,7 +277,15 @@ hosts:
       reach them. SSH key added to `/etc/dropbear/authorized_keys`. `rebind_domain`
       set for `k8s.lan` + `metoda.cc` (rebind protection was dropping the
       private-IP answers forwarded from the main router).
-      Configured in place (no Ansible role yet — see open_questions).
+      2026-11-13: the main router failed over `wan`→`wan2` and the WG tunnel
+      did not recover; diagnostics showed the provider **DPI-drops WG
+      transport** (handshake passes, data does not). A `wg-watchdog` cron was
+      installed that day but **removed 2026-11-14** because bouncing `wg0`
+      cannot fix DPI and just churned the interface. Public ingress now runs
+      over the Xray/SSH tunnel on k8s-node-1; `wg0` remains configured for
+      other uses. The WG interface/keys are still hand-configured (private key
+      not in git); the rest of the box also remains manual — see
+      open_questions.
     services:
       - {port: 22, proto: tcp, service: dropbear-ssh}
       - {port: 80, proto: tcp, service: luci-http}
@@ -293,12 +310,18 @@ hosts:
       10.10.120.0/24). User `arch` with NOPASSWD sudo. Since 2026-10-15 runs
       **Traefik** (Docker Compose, v3.7.14; Ansible role `adminvps_traefik`) on
       :80/:443 with Let's Encrypt **HTTP-01**, fronting `cloud.` / `auth.`
-      services at home (re-encrypt to ingress-nginx over the tunnel).
+      services at home.
+      2026-11-13: the public backends moved off WireGuard (its transport is
+      DPI-dropped by the home provider) to the **Xray VLESS Reality + SSH
+      reverse tunnel** from k8s-node-1. Traefik now proxies to
+      `https://127.0.0.1:10443` (ingress-nginx) and GitLab SSH to
+      `127.0.0.1:12222`; both are bound on adminvps loopback by
+      `xray-reverse-tunnel.service` on k8s-node-1 (see the kubernetes notes).
     services:
       - {port: 22, proto: tcp, service: ssh}
       - {port: 80, proto: tcp, service: "Traefik (Let's Encrypt HTTP-01 + :443 redirect)"}
       - {port: 1080, proto: tcp, service: "danted SOCKS5 (UFW: WireGuard-only since 2026-10-23; was provider-filtered before)"}
-      - {port: 443, proto: tcp, service: "Traefik (public TLS — cloud../auth.metoda.cc -> ingress-nginx over WG)"}
+      - {port: 443, proto: tcp, service: "Traefik (public TLS — cloud./auth./hermes./gitlab. -> ingress-nginx over the Xray/SSH tunnel)"}
       - {port: 443, proto: udp, service: hysteria}
       - {port: 2096, proto: tcp, service: "x-ui subscription endpoint (UFW: WireGuard-only since 2026-10-23)"}
       - {port: 12267, proto: tcp, service: "x-ui web panel (plain HTTP, random path; UFW: WireGuard-only since 2026-10-23)"}
@@ -354,6 +377,14 @@ kubernetes:
     tower entry). DNS wildcard `*.k8s.lan` ->
     10.10.120.101-104 served by the router; e.g. Vault UI at
     `https://vault.k8s.lan`.
+    **Public ingress tunnel (2026-11-13):** k8s-node-1 also runs the
+    non-k8s systemd services `xray-client` (VLESS Reality SOCKS on
+    `127.0.0.1:1081` towards adminvps:36243) and `xray-reverse-tunnel` (SSH
+    through that SOCKS; binds `127.0.0.1:10443` / `:12222` on adminvps to
+    `127.0.0.1:443` / `:30222` here). Deployed by
+    `ansible/playbooks/xray-tunnel.yml` (role `xray_tunnel`); the client UUID
+    is not in git. This is the current public-ingress path (WG transport is
+    DPI-dropped).
     **SSO (2026-10-13):** Keycloak 26.8.1 (canonical host `https://auth.metoda.cc`,
     ns `keycloak`) on Postgres 18.6 running **on tower** (`:5432`, no k8s LUN — see
     ADR-0002);
@@ -441,7 +472,8 @@ kubernetes:
 open_questions:
   - "metoda.cc: DNS is now IaC (`tofu/dns`, ADR-0005). Consider switching Traefik to DNS-01 + a wildcard certificate now that the Timeweb Cloud API manages the zone."
   - "Keycloak OIDC on the public host: KC_HOSTNAME=https://auth.metoda.cc + split-horizon DNS (router dnsmasq) + oauth2-proxy/Vault issuer URLs codified and applied; verify public login end-to-end. Which services are public vs VPN-only?"
-  - "No Ansible role yet for the Keenetic Omni II (OpenWrt server router) — it now carries the VLAN120 DHCP pool, routes, the wan->lan forwarding and split-horizon peering, all configured by hand. Manage it by IaC, and how?"
+  - "Keenetic Omni II (OpenWrt server router): the interface/keys, VLAN120 DHCP pool, routes, wan→lan forwarding and split-horizon peering are hand-configured (the temporary WG watchdog was removed 2026-11-14). How should the rest be managed by IaC, and where should the WG private key live (Vault)?"
+  - "WireGuard transport is DPI-dropped by the home provider (2026-11-13); public ingress now uses the Xray VLESS Reality + SSH reverse tunnel on k8s-node-1. Decide whether to keep WG at all, move the tunnel into k8s/GitOps (instead of a hand-installed systemd service), and how to alert if the tunnel dies."
   - "Why does archasus hold two IPv4 leases (.204 and .205) on one NIC?"
   - "What runs on the biqu* hosts (.161/.202/.203)? 3D printer controllers?"
   - "How should tower's /mnt/raid1 (native mdadm RAID1, no snapshots) and proxmox VMs be backed up?"

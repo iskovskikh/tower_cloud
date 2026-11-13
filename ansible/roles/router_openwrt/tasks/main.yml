@@ -149,3 +149,47 @@
   register: router_dhcp_hosts
   changed_when: "'CHANGED' in router_dhcp_hosts.stdout"
   notify: reload dnsmasq
+
+- name: Flush stale conntrack entries on WAN interface events (mwan3)
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+
+    {% for i in router_openwrt_mwan3_flush_interfaces %}
+    if uci -q get mwan3.{{ i }} >/dev/null 2>&1; then
+      want="{% for a in router_openwrt_mwan3_flush_actions %}{{ a }} {% endfor %}"
+      have="$(uci -q get mwan3.{{ i }}.flush_conntrack 2>/dev/null || true)"
+      want_norm="$(printf '%s\n' $want | grep . | sort | tr '\n' ' ' || true)"
+      have_norm="$(printf '%s\n' $have | grep . | sort | tr '\n' ' ' || true)"
+      if [ "$want_norm" != "$have_norm" ]; then
+        uci -q delete mwan3.{{ i }}.flush_conntrack 2>/dev/null || true
+        {% for a in router_openwrt_mwan3_flush_actions %}
+        uci -q add_list mwan3.{{ i }}.flush_conntrack='{{ a }}'
+        {% endfor %}
+        changed=1
+      fi
+    fi
+    {% endfor %}
+
+    if [ "$changed" = 1 ]; then uci commit mwan3; echo CHANGED; else echo OK; fi
+  register: router_mwan3_flush
+  changed_when: "'CHANGED' in router_mwan3_flush.stdout"
+
+- name: Prefer the primary WAN for new flows (mwan3 policy)
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+    policy='{{ router_openwrt_mwan3_policy }}'
+
+    {% for rule in ['https', 'default_rule_v4', 'default_rule_v6'] %}
+    cur="$(uci -q get mwan3.{{ rule }}.use_policy 2>/dev/null || true)"
+    if [ -n "$cur" ] && [ "$cur" != "$policy" ]; then
+      uci set mwan3.{{ rule }}.use_policy="$policy"
+      changed=1
+    fi
+    {% endfor %}
+
+    if [ "$changed" = 1 ]; then uci commit mwan3; echo CHANGED; else echo OK; fi
+  register: router_mwan3_policy
+  changed_when: "'CHANGED' in router_mwan3_policy.stdout"
+  notify: restart mwan3

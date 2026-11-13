@@ -87,6 +87,34 @@ router_openwrt_dns_addresses:
   - "/gitlab.metoda.cc/10.10.120.103"
   - "/gitlab.metoda.cc/10.10.120.104"
 
+# --- mwan3 conntrack hygiene -------------------------------------------------
+# An established flow keeps its mwan3 fwmark and NAT mapping across a WAN
+# switch until its conntrack entry is removed. The 2026-11-13 incident (the WG
+# tunnel died after a failover) was ultimately caused by provider DPI dropping
+# WG transport, but this flush still prevents stale NAT/mark entries from
+# outliving a WAN transition for any protocol. mwan3 flushes the whole
+# conntrack table when a tracked interface emits one of the hotplug actions
+# listed in `flush_conntrack`.
+#
+# The Keenetic wg0 watchdog was removed on 2026-11-14: WG transport is
+# DPI-dropped and public ingress now uses the Xray tunnel (role xray_tunnel).
+#
+# NOTE: this is a global flush, so it briefly resets every connection on the
+# event. Acceptable on WAN failover/recovery; do not add `always`.
+router_openwrt_mwan3_flush_interfaces:
+  - wan
+  - wan2
+router_openwrt_mwan3_flush_actions:
+  - ifup
+  - ifdown
+
+# mwan3 policy for new flows. `balanced` (the old default) hashes individual
+# connections across both WANs; on 2026-11-13 the 4G `wan2` path stalled TCP
+# data after the handshake, so half of the new flows hung (SSH/Xray included).
+# `wan_wanb` keeps `wan` (metric 1) primary and uses `wan2` only when `wan`
+# fails, which is what the public Xray tunnel and management SSH need.
+router_openwrt_mwan3_policy: wan_wanb
+
 # --- DHCP reservations (dnsmasq) --------------------------------------------
 # `section` is the uci section name; `mac`/`ip` pin the lease. The Keenetic
 # server-router's WAN is DHCP: without a reservation it can move off

@@ -1,0 +1,10 @@
+---
+# Health probe on archasus (the controller): public entry points through
+# adminvps + the Xray reverse-tunnel services.
+#
+# HEALTHCHECKS_PING_URL is a capability URL, i.e. a secret — supply it on the
+# command line / in an untracked var file, never commit it:
+#   ansible-playbook ansible/playbooks/monitoring.yml \
+#     -e archasus_monitoring_healthchecks_ping_url='https://hc-ping.com/<uuid>'
+# Leaving it empty installs the probe but no alerting sink.
+archasus_monitoring_healthchecks_ping_url: ""

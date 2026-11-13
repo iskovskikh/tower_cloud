@@ -1,0 +1,49 @@
+{
+  "log": {
+    "loglevel": "warning",
+    "error": ""
+  },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "{{ xray_tunnel_socks_host }}",
+      "port": {{ xray_tunnel_socks_port }},
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "vless-out",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "{{ xray_tunnel_server }}",
+            "port": {{ xray_tunnel_server_port }},
+            "users": [
+              {
+                "id": "{{ xray_tunnel_uuid }}",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "{{ xray_tunnel_server_name }}",
+          "fingerprint": "{{ xray_tunnel_fingerprint }}",
+          "publicKey": "{{ xray_tunnel_public_key }}",
+          "shortId": "{{ xray_tunnel_short_id }}",
+          "spiderX": "/"
+        }
+      }
+    }
+  ]
+}

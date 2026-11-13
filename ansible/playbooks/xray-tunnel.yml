@@ -1,0 +1,30 @@
+---
+# Xray VLESS Reality + SSH reverse tunnel for the public ingress path.
+#
+# The home provider drops WireGuard transport packets (2026-11-13), so the
+# public vhosts reach ingress-nginx through this tunnel instead. Run:
+#
+#   ansible-playbook ansible/playbooks/xray-tunnel.yml \
+#     -e @~/.xray-tunnel-vars.yml      # xray_tunnel_uuid: <uuid from x-ui>
+#
+# The binary is fetched from adminvps so the client exactly matches the server
+# version (x-ui ships the Xray build).
+
+- name: adminvps — fetch the Xray binary used by the server
+  hosts: adminvps
+  become: false
+  vars:
+    xray_tunnel_binary_src: /tmp/opencode/xray-linux-amd64
+  tasks:
+    - name: Fetch the Xray binary
+      ansible.builtin.fetch:
+        src: /usr/local/x-ui/bin/xray-linux-amd64
+        dest: "{{ xray_tunnel_binary_src }}"
+        flat: true
+      changed_when: false
+
+- name: k8s-node-1 — Xray reverse tunnel for public ingress
+  hosts: k8s-node-1
+  become: true
+  roles:
+    - xray_tunnel

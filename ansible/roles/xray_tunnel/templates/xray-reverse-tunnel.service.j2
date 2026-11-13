@@ -1,0 +1,28 @@
+[Unit]
+Description=SSH reverse tunnel to adminvps over Xray (public HTTPS/SSH ingress)
+Wants=network-online.target
+After=network-online.target xray-client.service
+Requires=xray-client.service
+
+[Service]
+Type=simple
+User={{ xray_tunnel_user }}
+Group={{ xray_tunnel_user }}
+Environment=HOME=/home/{{ xray_tunnel_user }}
+ExecStart=/usr/bin/ssh -N -T \
+    -o BatchMode=yes \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=3 \
+    -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile={{ xray_tunnel_known_hosts }} \
+    -o "ProxyCommand={{ xray_tunnel_proxy_command }} %%h %%p" \
+    -i {{ xray_tunnel_key }} \
+    -R 127.0.0.1:{{ xray_tunnel_remote_https_port }}:127.0.0.1:{{ xray_tunnel_home_https_port }} \
+    -R 127.0.0.1:{{ xray_tunnel_remote_ssh_port }}:127.0.0.1:{{ xray_tunnel_home_ssh_port }} \
+    {{ xray_tunnel_ssh_user }}@{{ xray_tunnel_server }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

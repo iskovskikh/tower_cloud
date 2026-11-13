@@ -4,6 +4,122 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-14 — Keenetic WG watchdog removed (WG transport is DPI-blocked)
+
+- **Why:** public ingress now runs over the Xray tunnel; WireGuard transport
+  packets are dropped by the home provider, so bouncing `wg0` cannot restore
+  anything and only churns the interface every ~5 min.
+- **Change:** removed the `/etc/crontabs/root` entry and `/usr/bin/wg-watchdog`
+  (plus the bounce stamp) on the Keenetic, and deleted
+  `ansible/roles/keenetic_wireguard`; the `keenetic` play was dropped from
+  `site.yml`. The WG **interface itself remains** (keys/routes unchanged) for
+  any non-public use.
+- **Kept:** `router_openwrt` mwan3 `flush_conntrack` (WAN hygiene) and the
+  `wan_wanb` policy. `scripts/public-health.sh` already checks the Xray
+  tunnel instead.
+
+---
+
+## 2026-11-13 — Public ingress moved to Xray VLESS Reality + SSH reverse tunnel
+
+- **Why:** the home provider drops WireGuard **transport** packets (handshake
+  passes, data does not; proven with a bidirectional UDP echo 10/10 — see the
+  entry below), so the public vhosts could not reach ingress-nginx over WG.
+- **Architecture (applied):**
+  - `k8s-node-1` runs the **Xray VLESS Reality client**
+    (`xray-client.service`, SOCKS on `127.0.0.1:1081`) towards the existing
+    x-ui inbound `78.17.99.16:36243` (serverName `www.oracle.com`, shortId
+    `2f3f8321`; the UUID is passed out-of-band, not in git).
+  - `xray-reverse-tunnel.service` keeps an SSH connection to adminvps
+    **through that SOCKS proxy** and binds
+    `127.0.0.1:10443 -> 127.0.0.1:443` (ingress-nginx hostNetwork) and
+    `127.0.0.1:12222 -> 127.0.0.1:30222` (GitLab shell NodePort) on adminvps.
+    The SSH key is dedicated (`~arch/.ssh/id_ed25519_xray` on k8s-node-1) and
+    authorized on adminvps.
+  - `adminvps_traefik` backends changed from the four WG node IPs to
+    `https://127.0.0.1:10443` (GitLab SSH to `127.0.0.1:12222`); Traefik still
+    terminates public TLS and skips tower-ca verification on the backend.
+  - mwan3 default policy (v4/v6 + `https`) switched from `balanced` to
+    `wan_wanb`: the 4G `wan2` path stalls TCP data after the handshake, so
+    per-flow balancing hung ~half of the new SSH/Xray connections. Primary
+    `wan` is preferred; `wan2` remains as failover.
+- **IaC:** `ansible/roles/xray_tunnel`, `ansible/playbooks/xray-tunnel.yml`
+  (fetches the x-ui Xray binary so client/server versions match), updated
+  `adminvps_traefik` defaults and the `router_openwrt` mwan3 policy.
+- **Verification:** local ingress on node-1 (each Host header) 200/302; SSH
+  from archasus 10/10; public `cloud.metoda.cc` 10/10 200; GitLab SSH on
+  :30222 reachable. Startup was flaky until the mwan3 policy change
+  (balanced/4G).
+- **Monitoring:** `scripts/public-health.sh` now probes the public vhosts and
+  the two tunnel services on k8s-node-1 instead of the WG handshake. Install
+  with `ansible-playbook ansible/playbooks/monitoring.yml -K`.
+- **WG status:** remains configured for other uses, but it is **not** the
+  public ingress path; its transport is still DPI-dropped. Its Keenetic
+  watchdog was removed on 2026-11-14 (entry above).
+
+---
+
+## 2026-11-13 — Public entry points down: WireGuard lost across WAN failover
+
+- **Symptom:** `https://cloud.metoda.cc` (and auth/hermes/gitlab) returned
+  **504** from Traefik while OpenCloud itself was healthy (`status.php` 200,
+  pod 1/1, PVC bound, ESO synced, LAN split-horizon access fine).
+- **Root cause:** the main router's primary WAN (`eth0.2`, DHCP
+  `100.64.48.134/20`) lost its upstream ~15:50 before the recon: link up and
+  lease valid, but even its gateway `100.64.48.1` was unreachable (as were the
+  ISP DNS servers). mwan3 failed over to `wan2` (`eth0.3` → 4G modem
+  `192.168.1.119`, `10.108.221.4`). The **established WireGuard UDP flow did
+  not survive the switch**: the Keenetic kept retrying
+  `192.168.1.216:50827 → 78.17.99.16:51820` (handshake stale 15h42m), but those
+  packets never reached adminvps (tcpdump: 0 in 65 s) while a fresh UDP flow
+  from the same host did. adminvps also kept probing the stale endpoint
+  `89.188.180.2:50827`.
+- **`wan2` is not healthy either:** mwan3track logged repeated 100% loss to
+  `1.0.0.1` (19:00, 19:09, 19:39) although the interface stayed `online`.
+- **Prevention (applied 2026-11-13, `site.yml --limit router,keenetic`):**
+  - `ansible/roles/router_openwrt`: `mwan3.<wan|wan2>.flush_conntrack =
+    [ifup, ifdown]` — clears stale NAT/mark entries on netifd WAN events.
+    Caveat: this incident was an mwan3 *tracking* failover, so netifd stayed
+    up and the flush would not have fired; it is hygiene, not the guarantee.
+  - New `ansible/roles/keenetic_wireguard` + `keenetic` inventory host:
+    `/usr/bin/wg-watchdog` from cron (`*/2`) bounces `wg0` when the last
+    handshake is older than 180 s (300 s cooldown). Re-creating the interface
+    picks a new ephemeral UDP port → fresh conntrack/NAT at every hop. The WG
+    keys/interface itself stays hand-configured (not in git). Confirmed running
+    and it did bounce `wg0` (new listen port, handshake restored).
+    **Removed 2026-11-14** — WG transport turned out to be DPI-dropped, so the
+    bounce cannot help (see the entry above).
+  - `scripts/public-health.sh` + `ansible/playbooks/monitoring.yml`: probes
+    every public vhost through `78.17.99.16` (forced `--resolve`) and the `wg0`
+    handshake age; optional healthchecks.io ping URL. Telegram cannot report a
+    WG outage here because its egress goes through the same tunnel.
+    **Not installed yet** — the playbook needs sudo on archasus; run it with
+    `-K` (or install it manually). (The probe was later switched to the Xray
+    tunnel services; see the entry above.)
+- **Recovery attempt:** `ifdown/ifup wan` on the main router **restored the
+  primary WAN** (the DHCP/upstream session was stale, not an ISP outage: the
+  gateway `100.64.48.1` and `1.1.1.1` came back). It did **not** restore the
+  tunnel: the WG handshake succeeds, but adminvps's transport packets (ICMP/TCP
+  to `10.200.0.2` / `10.10.120.x`) leave the VPS and **never reach the main
+  router** (tcpdump on the router: 0 inbound on `udp src port 51820` while
+  adminvps sends 128-byte data), and the Keenetic's WG receive counter stays
+  flat. **Decisive test (2026-11-13):** a bidirectional UDP echo from archasus
+  through the same WAN (the VPS saw source `89.188.180.2`) got **10/10 requests
+  and 10/10 replies**, while WireGuard transport still fails. So this is
+  **WireGuard-specific filtering (DPI)** on the path, not generic UDP/CGNAT
+  breakage: the filter lets the handshake (types 1/2) through and drops data
+  (type 4). Both WANs show the same behaviour.
+- **Still down:** public vhosts return 504 (after the primary WAN returned,
+  Traefik is reachable again but has no backend over the WG tunnel).
+- **Next:** watchdog or port changes cannot fix protocol-level DPI. Options:
+  a TCP-based tunnel (Cloudflare Tunnel / frp / the existing Xray), an
+  obfuscated WG transport (AmneziaWG / udp2raw) if UDP is preferred, or a
+  report to the ISP. Both WANs are online again (`wan`, `wan2`).
+  **Resolved the same day** by the Xray tunnel entry above;
+  `ansible-playbook ansible/playbooks/monitoring.yml -K` remains to be run.
+
+---
+
 ## 2026-11-12 — OpenCloud public links no longer require a password
 
 - **Why:** OpenCloud 7.2.4 defaults `public_sharing_share_must_have_password`
@@ -17,10 +133,9 @@ One entry per recon session or infrastructure change. Newest first.
 - **Deploy:** committed `8df9488` and pushed to `master`; Flux reconciles
   `k8s/` from git. `https://cloud.metoda.cc/status.php` stayed 200 (OpenCloud
   7.2.4) while polling after the push.
-- **Verification:** ❓ pod env not independently confirmed from `minibox`
-  (no `kubectl`/kubeconfig there). To verify, create a link without a password,
-  or run on `archasus`:
-  `kubectl -n opencloud get deploy opencloud -o yaml | grep -A1 SHARE_MUST_HAVE_PASSWORD`.
+- **Verification:** confirmed on 2026-11-13 from `archasus` — the running pod
+  has `OC_SHARING_PUBLIC_SHARE_MUST_HAVE_PASSWORD=false` and
+  `OC_SHARING_PUBLIC_WRITEABLE_SHARE_MUST_HAVE_PASSWORD=false` in its env.
 
 ---
 

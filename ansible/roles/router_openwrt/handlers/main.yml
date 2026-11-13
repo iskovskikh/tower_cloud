@@ -10,3 +10,7 @@
 - name: reload dnsmasq
   ansible.builtin.raw: /etc/init.d/dnsmasq reload
   changed_when: false
+
+- name: restart mwan3
+  ansible.builtin.raw: /etc/init.d/mwan3 restart
+  changed_when: false

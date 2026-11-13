@@ -21,21 +21,30 @@ adminvps_traefik_hosts:
   - gitlab.metoda.cc  # GitLab
 
 # ingress-nginx runs as a hostNetwork DaemonSet on every k8s node, so any node
-# is an entry point. Traefik reaches them over the WireGuard tunnel and
-# re-encrypts (HTTPS); the internal `tower-ca` certificate is not trusted on the
-# VPS, so verification is skipped (the tunnel is already encrypted).
+# is an entry point. Traefik re-encrypts (HTTPS); the internal `tower-ca`
+# certificate is not trusted on the VPS, so verification is skipped (the tunnel
+# is already encrypted).
+#
+# 2026-11-13: the home provider drops WireGuard *transport* packets (handshake
+# passes, data does not), so the backends are reached over the **Xray VLESS
+# Reality + SSH reverse tunnel** from k8s-node-1 instead (role xray_tunnel).
+# The SSH reverse forwards bind these loopback ports on adminvps:
 adminvps_traefik_ingress_servers:
-  - https://10.10.120.101:443
-  - https://10.10.120.102:443
-  - https://10.10.120.103:443
-  - https://10.10.120.104:443
+  - https://127.0.0.1:10443
+# WireGuard fallback (used until 2026-11-13; re-enable if the DPI blocks Xray):
+#   - https://10.10.120.101:443
+#   - https://10.10.120.102:443
+#   - https://10.10.120.103:443
+#   - https://10.10.120.104:443
 
 # GitLab SSH (gitlab-shell) is NodePort 30222 on every k8s node; Traefik exposes
 # it publicly on the same port 30222 (adminvps :22 belongs to the admin sshd).
 # Clone URLs are ssh://git@gitlab.metoda.cc:30222/... (or Port 30222 in
 # ~/.ssh/config).
 adminvps_traefik_gitlab_ssh_servers:
-  - 10.10.120.101:30222
-  - 10.10.120.102:30222
-  - 10.10.120.103:30222
-  - 10.10.120.104:30222
+  - 127.0.0.1:12222
+# WireGuard fallback:
+#   - 10.10.120.101:30222
+#   - 10.10.120.102:30222
+#   - 10.10.120.103:30222
+#   - 10.10.120.104:30222

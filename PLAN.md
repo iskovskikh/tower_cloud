@@ -148,13 +148,18 @@ _Updated: 2026-10-15_
 
 - [ ] backups + snapshots (tower array, VMs, k8s volumes, etcd)
 - [ ] disk replacement plan (~3.6 y power-on on both NDSs)
-- [ ] monitoring/alerting (mdadm MAILADDR already set)
+- [ ] monitoring/alerting (mdadm MAILADDR already set). Codified probe:
+      `scripts/public-health.sh` + `ansible/playbooks/monitoring.yml` (public
+      vhosts through adminvps + WireGuard handshake; optional healthchecks.io
+      ping URL) — apply with `ansible-playbook ansible/playbooks/monitoring.yml`.
 
 ## Phase 6 — external access (public VPS + WireGuard)
 
 Design: **ADR-0003**. The home WAN is CGNAT (no public IPv4) → a public VPS
 (`adminvps`) is the relay; the **Keenetic Omni II** (OpenWrt) is the home WG
-client and the server-segment router.
+client and the server-segment router. Since 2026-11-13 the home provider drops
+WireGuard transport (DPI), so public ingress uses the **Xray VLESS Reality +
+SSH reverse tunnel** from k8s-node-1 instead (see CHANGELOG).
 
 - [x] Confirm CGNAT (`100.64.48.0/10`) → port-forwarding impossible
 - [x] `adminvps` (`78.17.99.16`) as WireGuard **server** (`10.200.0.1`, udp 51820);
@@ -169,6 +174,10 @@ client and the server-segment router.
 - [x] `tower` address pinned to `.200` (DHCP reservation on the Keenetic)
 - [x] **Traefik** reverse proxy on `adminvps` (`:80`/`:443`) — role
       `adminvps_traefik` (Docker Compose, Traefik v3.7.14), 2026-10-15
+- [x] **Public ingress via Xray** (2026-11-13): WG transport is DPI-blocked;
+      `ansible/roles/xray_tunnel` runs `xray-client` + `xray-reverse-tunnel` on
+      k8s-node-1; Traefik backends are `127.0.0.1:10443` / `:12222`; mwan3
+      policy `wan_wanb`. Verified public 10/10 and SSH 10/10.
 - [x] **domain**: `metoda.cc` registered at Timeweb (2026-10-15)
 - [x] **DNS**: zone managed **by hand** in the Timeweb hosting panel
       (`hosting.timeweb.ru/domains`) — the Timeweb Cloud API does not see it, so
@@ -185,6 +194,12 @@ client and the server-segment router.
 - [ ] bring the cluster's **Keycloak / Vault** back up (currently not answering)
 - [ ] **IaC**: Ansible role/playbook for `adminvps` (WG + Traefik) and for the
       Keenetic Omni II (OpenWrt server router) — both configured by hand 2026-10-14
+- [x] **mwan3 conntrack flush** (`router_openwrt`, WAN transitions) — applied
+      2026-11-13. The Keenetic WG watchdog was removed 2026-11-14: the provider
+      DPI-drops WG transport, and public ingress uses the Xray tunnel.
+- [ ] **public-path monitoring**: `scripts/public-health.sh` +
+      `ansible/playbooks/monitoring.yml` (public vhosts + Xray tunnel services,
+      optional healthchecks.io) — codified, **not installed** (needs sudo `-K`).
 - [ ] move the k8s node **DHCP reservations** from the main router to the Keenetic
 - [ ] **harden `adminvps`** (public, internet-exposed relay)
 

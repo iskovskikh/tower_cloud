@@ -1,0 +1,48 @@
+---
+# Xray VLESS Reality client + SSH reverse tunnel for the public ingress path.
+#
+# Since 2026-11-13 the home provider drops WireGuard *transport* packets
+# (handshake passes, data does not — see docs/network/CHANGELOG.md), so the
+# public entry points cannot use the WireGuard tunnel. This role instead runs
+# an Xray VLESS Reality client on a k8s node and keeps an SSH reverse tunnel
+# open **through that client** to adminvps:
+#
+#   internet -> adminvps Traefik -> 127.0.0.1:10443 (sshd reverse forward)
+#            -> Xray VLESS Reality (tcp/{{ xray_tunnel_server_port }})
+#            -> k8s node -> 127.0.0.1:443 (ingress-nginx)
+#
+# The VLESS parameters mirror the existing x-ui inbound on adminvps; only the
+# client UUID is a credential and is NOT stored in git:
+#   ansible-playbook ... -e @~/.xray-tunnel-vars.yml   # xray_tunnel_uuid: ...
+#
+# Everything listens on loopback; nothing new is exposed publicly.
+
+xray_tunnel_server: 78.17.99.16
+xray_tunnel_server_port: 36243
+xray_tunnel_uuid: ""                 # required (secret) — pass out-of-band
+xray_tunnel_server_name: www.oracle.com
+xray_tunnel_fingerprint: chrome
+# Public key of the server's Reality key pair (safe to commit; not a secret).
+xray_tunnel_public_key: "xsuZ_5wQz9v8_qd_wKdQyaeIrMuEnd4EpCh_HwPUjxg"
+xray_tunnel_short_id: "2f3f8321"
+
+xray_tunnel_socks_host: 127.0.0.1
+xray_tunnel_socks_port: 1081
+
+# Loopback ports on adminvps that the SSH reverse forwards bind.
+xray_tunnel_remote_https_port: 10443
+xray_tunnel_remote_ssh_port: 12222
+
+# Local (home node) targets behind the reverse forwards.
+xray_tunnel_home_https_port: 443     # ingress-nginx hostNetwork
+xray_tunnel_home_ssh_port: 30222     # GitLab shell NodePort
+
+xray_tunnel_user: arch
+xray_tunnel_ssh_user: arch
+xray_tunnel_key: /home/{{ xray_tunnel_user }}/.ssh/id_ed25519_xray
+xray_tunnel_known_hosts: /home/{{ xray_tunnel_user }}/.ssh/known_hosts_xray
+xray_tunnel_proxy_command: /usr/local/bin/ssh-socks-proxy
+
+# Controller path holding the Xray binary (playbooks/xray-tunnel.yml fetches it
+# from adminvps so the client matches the server version exactly).
+xray_tunnel_binary_src: /tmp/opencode/xray-linux-amd64

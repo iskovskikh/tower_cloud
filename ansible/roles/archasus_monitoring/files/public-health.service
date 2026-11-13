@@ -1,0 +1,12 @@
+[Unit]
+Description=Probe public entry points and the Xray reverse tunnel
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as the normal user so it can use ~/.ssh for the Keenetic handshake check.
+User=arch
+Group=arch
+EnvironmentFile=-/etc/public-health.env
+ExecStart=/usr/local/bin/public-health.sh

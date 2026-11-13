@@ -1,0 +1,4 @@
+#!/bin/sh
+# SSH ProxyCommand: dial the destination through the local Xray SOCKS5 inbound.
+# Installed by ansible/roles/xray_tunnel.
+exec /usr/bin/nc -X 5 -x {{ xray_tunnel_socks_host }}:{{ xray_tunnel_socks_port }} "$1" "$2"

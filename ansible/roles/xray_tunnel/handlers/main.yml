@@ -1,0 +1,9 @@
+---
+- name: restart xray tunnel
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+    daemon_reload: true
+  loop:
+    - xray-client
+    - xray-reverse-tunnel

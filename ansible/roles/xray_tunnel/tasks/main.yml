@@ -1,0 +1,154 @@
+---
+# Xray VLESS Reality client + SSH reverse tunnel (public ingress path).
+# Installed on a k8s node; adminvps is only touched to authorize the tunnel key
+# and to verify the remote forwards.
+
+- name: Require the Xray client UUID
+  ansible.builtin.assert:
+    that:
+      - xray_tunnel_uuid | length > 0
+    fail_msg: >-
+      xray_tunnel_uuid is required; pass it out-of-band, e.g.
+      -e @~/.xray-tunnel-vars.yml (the UUID is a credential, not in git).
+
+- name: Ensure the tunnel user's .ssh directory exists
+  ansible.builtin.file:
+    path: "/home/{{ xray_tunnel_user }}/.ssh"
+    state: directory
+    owner: "{{ xray_tunnel_user }}"
+    group: "{{ xray_tunnel_user }}"
+    mode: "0700"
+
+- name: Install the Xray binary
+  ansible.builtin.copy:
+    src: "{{ xray_tunnel_binary_src }}"
+    dest: /usr/local/bin/xray
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart xray tunnel
+
+- name: Create /etc/xray
+  ansible.builtin.file:
+    path: /etc/xray
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render the Xray client config
+  ansible.builtin.template:
+    src: client.json.j2
+    dest: /etc/xray/client.json
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart xray tunnel
+
+- name: Validate the Xray client config
+  ansible.builtin.command:
+    cmd: /usr/local/bin/xray run -test -c /etc/xray/client.json
+  changed_when: false
+
+- name: Generate the reverse-tunnel SSH key
+  community.crypto.openssh_keypair:
+    path: "{{ xray_tunnel_key }}"
+    type: ed25519
+    backend: opensshbin
+    owner: "{{ xray_tunnel_user }}"
+    group: "{{ xray_tunnel_user }}"
+    mode: "0600"
+
+- name: Read the tunnel public key
+  ansible.builtin.command:
+    cmd: "cat {{ xray_tunnel_key }}.pub"
+  register: xray_tunnel_public_key_line
+  changed_when: false
+
+- name: Authorize the tunnel key on adminvps
+  ansible.posix.authorized_key:
+    user: "{{ xray_tunnel_ssh_user }}"
+    key: "{{ xray_tunnel_public_key_line.stdout }}"
+    state: present
+  delegate_to: adminvps
+  become: false
+
+- name: Fetch the adminvps SSH host key
+  ansible.builtin.command:
+    cmd: "ssh-keyscan -t ed25519 {{ xray_tunnel_server }}"
+  register: xray_tunnel_hostkey
+  changed_when: false
+  retries: 3
+  delay: 2
+  until: xray_tunnel_hostkey.stdout | length > 0
+
+- name: Install the dedicated known_hosts file
+  ansible.builtin.copy:
+    content: "{{ xray_tunnel_hostkey.stdout }}"
+    dest: "{{ xray_tunnel_known_hosts }}"
+    owner: "{{ xray_tunnel_user }}"
+    group: "{{ xray_tunnel_user }}"
+    mode: "0600"
+
+- name: Install the SSH SOCKS ProxyCommand wrapper
+  ansible.builtin.template:
+    src: ssh-socks-proxy.j2
+    dest: "{{ xray_tunnel_proxy_command }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart xray tunnel
+
+- name: Install the Xray client service
+  ansible.builtin.template:
+    src: xray-client.service.j2
+    dest: /etc/systemd/system/xray-client.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart xray tunnel
+
+- name: Install the SSH reverse tunnel service
+  ansible.builtin.template:
+    src: xray-reverse-tunnel.service.j2
+    dest: /etc/systemd/system/xray-reverse-tunnel.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart xray tunnel
+
+- name: Enable and start the tunnel services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - xray-client
+    - xray-reverse-tunnel
+
+- name: Verify the Xray SOCKS path works
+  ansible.builtin.command:
+    cmd: >-
+      curl -sS --max-time 10 --socks5-hostname
+      {{ xray_tunnel_socks_host }}:{{ xray_tunnel_socks_port }}
+      https://ifconfig.me
+  register: xray_tunnel_socks_check
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: xray_tunnel_socks_check.rc == 0
+
+- name: Verify the reverse tunnel reaches ingress-nginx
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:{{ xray_tunnel_remote_https_port }}/"
+    headers:
+      Host: cloud.metoda.cc
+    validate_certs: false
+    status_code: [200, 301, 302]
+  delegate_to: adminvps
+  become: false
+  register: xray_tunnel_ingress_check
+  retries: 10
+  delay: 3
+  until: xray_tunnel_ingress_check.status in [200, 301, 302]
