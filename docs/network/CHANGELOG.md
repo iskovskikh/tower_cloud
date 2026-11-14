@@ -4,6 +4,23 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-14 — mwan3 conntrack flush covers tracking-only WAN failover
+
+- **Symptom/gap:** a provider outage usually leaves the link to the nearest ISP
+  switch up, so netifd emits no `ifdown`/`ifup`; mwan3track alone detects the
+  upstream loss. `flush_conntrack` was limited to `ifup`/`ifdown`, so the
+  tracking-only transition left stale NAT/mark entries (confirmed in
+  `/etc/hotplug.d/iface/15-mwan3`: `connected`/`disconnected` are accepted and
+  `mwan3track` raises `disconnected` on tracking loss).
+- **Change:** `router_openwrt` now sets `mwan3.<wan|wan2>.flush_conntrack =
+  [ifup, ifdown, connected, disconnected]`. Applied to the main router
+  2026-11-14; verified with `uci get` on both interfaces.
+- **Caveat:** the flush clears stale entries, it does not migrate an
+  established flow — the Xray/SSH tunnel still reconnects via SSH keepalive
+  (`ServerAliveInterval=15`, `ServerAliveCountMax=3`).
+
+---
+
 ## 2026-11-14 — Xray handshakes stalled by DPI: firefox fingerprint + :443
 
 - **Symptom:** once Hermes used the Xray SOCKS, most *new* VLESS connections

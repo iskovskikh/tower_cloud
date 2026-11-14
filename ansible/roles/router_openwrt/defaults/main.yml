@@ -110,6 +110,12 @@ router_openwrt_network_legend:
 # WireGuard was retired on 2026-11-14 (its transport is DPI-dropped by the
 # home provider); public ingress uses the Xray tunnel (role xray_tunnel).
 #
+# `ifup`/`ifdown` only fire when netifd sees the interface change state. A
+# provider outage usually keeps the link to the nearest ISP switch up, so
+# mwan3track alone detects it (upstream loss) and emits `disconnected`
+# (`connected` on recovery) without any netifd event — hence those two actions
+# must be listed as well, or a tracking-only failover leaves stale entries.
+#
 # NOTE: this is a global flush, so it briefly resets every connection on the
 # event. Acceptable on WAN failover/recovery; do not add `always`.
 router_openwrt_mwan3_flush_interfaces:
@@ -118,6 +124,8 @@ router_openwrt_mwan3_flush_interfaces:
 router_openwrt_mwan3_flush_actions:
   - ifup
   - ifdown
+  - connected
+  - disconnected
 
 # mwan3 policy for new flows. `balanced` (the old default) hashes individual
 # connections across both WANs; on 2026-11-13 the 4G `wan2` path stalled TCP
