@@ -18,8 +18,10 @@ entryPoints:
     address: ":30222"
 
 providers:
+  # Directory provider: routers.yml + backend.yml are separate files, so the
+  # failover timer can rewrite the backend without touching the routers.
   file:
-    filename: /etc/traefik/dynamic.yml
+    directory: /etc/traefik/conf.d
     watch: true
 
 certificatesResolvers:

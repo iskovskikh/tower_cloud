@@ -1,0 +1,25 @@
+# Managed by Ansible (role wstunnel_fallback) — do not edit by hand.
+#
+# Whitelist: the server may only open the two loopback reverse-tunnel
+# endpoints Traefik uses for the public ingress fallback. Everything else is
+# denied by wstunnel's default-deny restriction model. The upgrade-path prefix
+# (also the client credential) is matched here; wstunnel does not allow using
+# --restrict-config together with --restrict-http-upgrade-path-prefix.
+restrictions:
+  - name: "ingress fallback reverse tunnels"
+    description: >-
+      Publish only adminvps loopback :{{ wstunnel_fallback_remote_https_port }}
+      (ingress-nginx) and :{{ wstunnel_fallback_remote_ssh_port }} (GitLab shell).
+    match:
+      # The upgrade-path prefix doubles as the client credential; wstunnel
+      # rejects every other prefix before evaluating the allow list.
+      - !PathPrefix "^{{ wstunnel_fallback_path_secret }}$"
+    allow:
+      - !ReverseTunnel
+        protocol:
+          - Tcp
+        port:
+          - {{ wstunnel_fallback_remote_https_port }}
+          - {{ wstunnel_fallback_remote_ssh_port }}
+        cidr:
+          - 127.0.0.1/32

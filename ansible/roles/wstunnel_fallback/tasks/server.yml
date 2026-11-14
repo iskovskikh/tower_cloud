@@ -1,0 +1,67 @@
+---
+# adminvps — wstunnel server behind Traefik (public :443 terminates TLS).
+# Binds loopback only; the reverse endpoints are opened on demand by the
+# client on k8s-node-1.
+
+- name: Require the wstunnel upgrade-path secret
+  ansible.builtin.assert:
+    that:
+      - wstunnel_fallback_path_secret | length >= 16
+    fail_msg: >-
+      wstunnel_fallback_path_secret is required (>=16 chars); pass it
+      out-of-band, e.g. -e @~/.wstunnel-vars.yml (it is a credential).
+
+- name: Install the wstunnel binary
+  ansible.builtin.copy:
+    src: "{{ wstunnel_fallback_binary_src }}"
+    dest: "{{ wstunnel_fallback_binary_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart wstunnel server
+
+- name: Create the wstunnel config directory
+  ansible.builtin.file:
+    path: "{{ wstunnel_fallback_server_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render the reverse-tunnel restrictions
+  ansible.builtin.template:
+    src: restrictions.yaml.j2
+    dest: "{{ wstunnel_fallback_server_conf_dir }}/restrictions.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart wstunnel server
+
+- name: Install the wstunnel server service
+  ansible.builtin.template:
+    src: wstunnel-server.service.j2
+    dest: /etc/systemd/system/wstunnel-server.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart wstunnel server
+
+- name: Enable and start the wstunnel server
+  ansible.builtin.systemd:
+    name: wstunnel-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending restarts before verifying
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the server accepts the configured upgrade path
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ wstunnel_fallback_server_bind.split(':')[1] }}/{{ wstunnel_fallback_path_secret }}"
+    status_code: [400, 426, 200]
+  register: wstunnel_fallback_server_check
+  retries: 5
+  delay: 2
+  until: wstunnel_fallback_server_check.status in [400, 426, 200]
+  changed_when: false

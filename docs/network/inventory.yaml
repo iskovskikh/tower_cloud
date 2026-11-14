@@ -32,6 +32,7 @@ domains:
       - {name: auth,  type: A, value: 78.17.99.16, role: "Keycloak (public); split-horizon internally -> ingress-nginx", status: present}
       - {name: hermes, type: A, value: 78.17.99.16, role: "Hermes Agent (public + split-horizon)", status: present}
       - {name: gitlab, type: A, value: 78.17.99.16, role: "GitLab (public + split-horizon)", status: present}
+      - {name: relay,  type: A, value: 78.17.99.16, role: "wstunnel fallback transport (WSS; covered by the * record)", status: present}
       - {name: "*",   type: A, value: 78.17.99.16, role: "wildcard (routing only; TLS is per-host)", status: present}
       - {name: "@",   type: A, value: 78.17.99.16, role: "apex", status: present}
       - {name: www,   type: A, value: 78.17.99.16, role: "www", status: present}
@@ -116,7 +117,9 @@ hosts:
       (link/lease still up, gateway `100.64.48.1` unreachable); `ifdown/ifup
       wan` restored it. **mwan3 policy is now `wan_wanb`** (primary `wan`, 4G
       as failover) because `wan2` stalls TCP data after the handshake. Role
-      `router_openwrt` also flushes conntrack on WAN events. Public ingress no
+      `router_openwrt` also flushes conntrack on WAN events, including the
+      mwan3 tracking-only `connected`/`disconnected` transitions (2026-11-14).
+      Public ingress no
       longer uses WG (provider DPI drops WG transport) — it runs over the Xray
       tunnel from k8s-node-1 (see the kubernetes notes).
     services:
@@ -303,6 +306,14 @@ hosts:
       `https://127.0.0.1:10443` (ingress-nginx) and GitLab SSH to
       `127.0.0.1:12222`; both are bound on adminvps loopback by
       `xray-reverse-tunnel.service` on k8s-node-1 (see the kubernetes notes).
+      2026-11-14 (**ADR-0007**): added a fallback transport, `wstunnel` over
+      WebSocket/TLS. `wstunnel-server.service` listens on `127.0.0.1:8080`
+      behind Traefik (host network), which terminates a Let's Encrypt
+      certificate for `relay.metoda.cc`; `wstunnel-fallback.service` on
+      k8s-node-1 keeps reverse tunnels on `127.0.0.1:10444` (ingress-nginx) and
+      `127.0.0.1:12223` (GitLab shell). A 30 s timer
+      (`traefik-ingress-failover.timer`) probes 10443/10444 and swaps
+      `/etc/traefik/conf.d/backend.yml`; the primary wins when healthy.
     services:
       - {port: 22, proto: tcp, service: ssh}
       - {port: 80, proto: tcp, service: "Traefik (Let's Encrypt HTTP-01 + :443 redirect)"}
@@ -313,6 +324,9 @@ hosts:
       - {port: 12267, proto: tcp, service: "x-ui web panel (plain HTTP, random path; UFW: closed since 2026-11-14, was WireGuard-only)"}
       - {port: 30222, proto: tcp, service: "Traefik TCP -> GitLab SSH (gitlab-shell NodePort 30222 via reverse tunnel)"}
       - {port: 36243, proto: tcp, service: "Xray VLESS Reality inbound (direct fallback; normally reached via Traefik :443 SNI passthrough)"}
+      - {port: 8080, proto: tcp, service: "wstunnel server (loopback only; Traefik relay.metoda.cc terminates TLS)"}
+      - {port: 10444, proto: tcp, service: "wstunnel reverse -> ingress-nginx (loopback fallback backend)"}
+      - {port: 12223, proto: tcp, service: "wstunnel reverse -> GitLab shell (loopback fallback backend)"}
     security_audit_2026_10_23: >
       External audit from archasus/Shodan/check-host, then hardening applied
       (role `adminvps_hardening`). Before: public TCP 22 (password auth + root
@@ -373,6 +387,15 @@ kubernetes:
     `ansible/playbooks/xray-tunnel.yml` (role `xray_tunnel`); the client UUID
     is not in git. This is the current public-ingress path (WG transport is
     DPI-dropped).
+    **Fallback transport (2026-11-14, ADR-0007):** k8s-node-1 also runs
+    `wstunnel-fallback.service` (wstunnel 11.1.0 client) to
+    `wss://relay.metoda.cc`; it keeps reverse tunnels on adminvps loopback
+    `127.0.0.1:10444` (ingress-nginx) and `:12223` (GitLab shell). The upgrade
+    path prefix is a credential, not in git. On adminvps,
+    `traefik-ingress-failover.timer` probes the primary (10443) and fallback
+    (10444) and rewrites `/etc/traefik/conf.d/backend.yml`; the primary is used
+    whenever it answers. Deployed by
+    `ansible/playbooks/wstunnel-fallback.yml` (role `wstunnel_fallback`).
     **SSO (2026-10-13):** Keycloak 26.8.1 (canonical host `https://auth.metoda.cc`,
     ns `keycloak`) on Postgres 18.6 running **on tower** (`:5432`, no k8s LUN — see
     ADR-0002);

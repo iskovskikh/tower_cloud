@@ -1,5 +1,8 @@
 # Managed by Ansible (role adminvps_traefik) — do not edit by hand.
-# Dynamic Traefik configuration (file provider; watched for changes).
+# Dynamic Traefik configuration (file provider directory; watched for changes).
+# Routers + the static relay/Xray services live here; the ingress/gitlab-ssh
+# backends are in backend.yml, which the failover timer rewrites.
+
 http:
   routers:
 {% for host in adminvps_traefik_hosts %}
@@ -11,17 +14,22 @@ http:
       tls:
         certResolver: letsencrypt
 {% endfor %}
+    # wstunnel fallback transport. Traefik terminates TLS for the relay host and
+    # forwards plain WebSocket to the local wstunnel server (role
+    # wstunnel_fallback), which authenticates the client by upgrade-path prefix.
+    relay:
+      rule: "Host(`{{ adminvps_traefik_relay_host }}`)"
+      entryPoints:
+        - websecure
+      service: relay
+      tls:
+        certResolver: letsencrypt
 
   services:
-    # All public hosts share the home ingress-nginx entry points; the Host
-    # header (passHostHeader defaults to true) selects the k8s Ingress.
-    ingress:
+    relay:
       loadBalancer:
-        serversTransport: k8s-insecure
         servers:
-{% for server in adminvps_traefik_ingress_servers %}
-          - url: "{{ server }}"
-{% endfor %}
+          - url: "{{ adminvps_traefik_relay_backend }}"
 
   serversTransports:
     k8s-insecure:
@@ -29,8 +37,8 @@ http:
       # already encrypted, so the back-end certificate is not verified.
       insecureSkipVerify: true
 
-# GitLab SSH: a single non-TLS TCP entry point (:2222) forwarded to the
-# gitlab-shell NodePort through the SSH reverse tunnel.
+# GitLab SSH: a single non-TLS TCP entry point (:30222) forwarded to the
+# gitlab-shell NodePort through the SSH reverse tunnel (backend in backend.yml).
 tcp:
   routers:
     gitlab-ssh:
@@ -50,12 +58,6 @@ tcp:
       tls:
         passthrough: true
   services:
-    gitlab-ssh:
-      loadBalancer:
-        servers:
-{% for server in adminvps_traefik_gitlab_ssh_servers %}
-          - address: "{{ server }}"
-{% endfor %}
     xray-reality:
       loadBalancer:
         servers:

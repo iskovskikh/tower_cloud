@@ -10,5 +10,5 @@ services:
       - no-new-privileges:true
     volumes:
       - "{{ adminvps_traefik_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
-      - "{{ adminvps_traefik_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "{{ adminvps_traefik_dir }}/conf.d:{{ adminvps_traefik_dir }}/conf.d:ro"
       - "{{ adminvps_traefik_dir }}/acme:/etc/traefik/acme"

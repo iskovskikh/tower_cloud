@@ -1,0 +1,49 @@
+---
+# wstunnel (WebSocket-over-TLS) fallback transport for the public ingress path.
+#
+# The primary path is still the Xray VLESS Reality + SSH reverse tunnel
+# (ADR-0006). This role adds an independent *transport* between k8s-node-1 and
+# adminvps so the public ingress survives a DPI block of VLESS Reality:
+#
+#   k8s-node-1 --wss://relay.metoda.cc--> adminvps Traefik (:443, Let's Encrypt)
+#              --ws://127.0.0.1:8080--> wstunnel server
+#              --reverse--> 127.0.0.1:10444 / :12223 on adminvps
+#              --> ingress-nginx / GitLab shell on k8s-node-1
+#
+# Traefik keeps pointing at the primary ports (10443/12222) by default; the
+# role adminvps_traefik has a timer that probes them and rewrites the live
+# backend to the fallback ports (10444/12223) when the primary tunnel dies.
+#
+# The upgrade path prefix is a credential (it authenticates the client to the
+# server) and is NOT stored in git. Pass it out-of-band:
+#   ansible-playbook ... -e @~/.wstunnel-vars.yml   # wstunnel_fallback_path_secret: ...
+
+# Pinned upstream release (static musl binary).
+wstunnel_fallback_version: "11.1.0"
+wstunnel_fallback_binary_src: /tmp/opencode/wstunnel-linux-amd64
+wstunnel_fallback_binary_dest: /usr/local/bin/wstunnel
+
+# Public hostname on adminvps. The `*.metoda.cc` A record already points here,
+# so no DNS change is needed; Traefik terminates TLS (HTTP-01) and speaks plain
+# WebSocket to the local server.
+wstunnel_fallback_relay_host: relay.metoda.cc
+
+# Credential — required, passed out-of-band (see above).
+wstunnel_fallback_path_secret: ""
+
+# adminvps side: plain WS on loopback; Traefik owns public :443.
+wstunnel_fallback_server_bind: 127.0.0.1:8080
+wstunnel_fallback_server_conf_dir: /etc/wstunnel
+# Do not let the server unbind a reverse endpoint while the tunnel is idle
+# (default is 3m; the ingress can legitimately be quiet for longer).
+wstunnel_fallback_server_idle_timeout: 8760h
+
+# Loopback ports on adminvps that the fallback reverse forwards bind.
+wstunnel_fallback_remote_https_port: 10444
+wstunnel_fallback_remote_ssh_port: 12223
+
+# Local (home node) targets behind the reverse forwards.
+wstunnel_fallback_home_https_port: 443     # ingress-nginx hostNetwork
+wstunnel_fallback_home_ssh_port: 30222     # GitLab shell NodePort
+
+wstunnel_fallback_user: arch

@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically switch the Traefik ingress backend to a healthy transport
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec={{ adminvps_traefik_failover_interval }}s
+AccuracySec=1s
+Unit=traefik-ingress-failover.service
+
+[Install]
+WantedBy=timers.target

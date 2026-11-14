@@ -1,13 +1,16 @@
 ---
-# adminvps — public Traefik front end (ADR-0003/0004, ADR-0006). Docker Compose
-# service that terminates Let's Encrypt TLS and proxies named hostnames to the
-# home ingress-nginx over the Xray/SSH reverse tunnel.
+# adminvps — public Traefik front end (ADR-0003/0004, ADR-0006, ADR-0007).
+# Docker Compose service that terminates Let's Encrypt TLS and proxies named
+# hostnames to the home ingress-nginx over the Xray/SSH reverse tunnel, with a
+# wstunnel (WSS) reverse tunnel as the fallback transport. A systemd timer
+# rewrites the live backend file when the primary transport stops answering.
 
-- name: Install Docker Engine and the Compose v2 plugin
+- name: Install Docker Engine, the Compose v2 plugin and curl (failover probe)
   ansible.builtin.apt:
     name:
       - docker.io
       - docker-compose-v2
+      - curl
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -28,6 +31,8 @@
   loop:
     - "{{ adminvps_traefik_dir }}"
     - "{{ adminvps_traefik_dir }}/acme"
+    - "{{ adminvps_traefik_dir }}/conf.d"
+    - "{{ adminvps_traefik_dir }}/backends"
 
 # Traefik refuses to start unless the ACME store exists and is mode 0600.
 # force=false: never clobber an existing account/certificate store.
@@ -49,14 +54,66 @@
     mode: "0644"
   notify: restart traefik
 
-- name: Render the dynamic Traefik config
+- name: Render the dynamic routers
   ansible.builtin.template:
-    src: dynamic.yml.j2
-    dest: "{{ adminvps_traefik_dir }}/dynamic.yml"
+    src: routers.yml.j2
+    dest: "{{ adminvps_traefik_dir }}/conf.d/routers.yml"
     owner: root
     group: root
     mode: "0644"
-  notify: restart traefik
+
+# Both backend variants are rendered ahead of time; the failover script copies
+# the healthy one to conf.d/backend.yml (atomic rename) and Traefik reloads.
+- name: Render the primary and fallback backend variants
+  ansible.builtin.template:
+    src: backend.yml.j2
+    dest: "{{ adminvps_traefik_dir }}/backends/{{ item }}.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - primary
+    - fallback
+  vars:
+    backend_ingress_servers: >-
+      {{ adminvps_traefik_primary_ingress_servers if item == 'primary'
+         else adminvps_traefik_fallback_ingress_servers }}
+    backend_gitlab_ssh_servers: >-
+      {{ adminvps_traefik_primary_gitlab_ssh_servers if item == 'primary'
+         else adminvps_traefik_fallback_gitlab_ssh_servers }}
+
+# Seed the live file only if absent: the timer owns it once installed, so an
+# Ansible re-run must not yank a running failover back to the primary.
+- name: Seed the live backend file on first install
+  ansible.builtin.template:
+    src: backend.yml.j2
+    dest: "{{ adminvps_traefik_dir }}/conf.d/backend.yml"
+    force: false
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    backend_ingress_servers: "{{ adminvps_traefik_primary_ingress_servers }}"
+    backend_gitlab_ssh_servers: "{{ adminvps_traefik_primary_gitlab_ssh_servers }}"
+
+- name: Install the ingress backend failover script
+  ansible.builtin.template:
+    src: traefik-ingress-failover.sh.j2
+    dest: /usr/local/sbin/traefik-ingress-failover
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the failover service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - traefik-ingress-failover.service
+    - traefik-ingress-failover.timer
 
 - name: Render the Docker Compose file
   ansible.builtin.template:
@@ -76,3 +133,37 @@
     'Started' in adminvps_traefik_up.stdout or
     'Created' in adminvps_traefik_up.stdout or
     'Recreated' in adminvps_traefik_up.stdout
+
+- name: Apply the Traefik restart before checking the new config
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify Traefik serves a public vhost through the live backend
+  ansible.builtin.uri:
+    url: "https://127.0.0.1/"
+    headers:
+      Host: "{{ adminvps_traefik_hosts[0] }}"
+    validate_certs: false
+    status_code: [200, 301, 302]
+  register: adminvps_traefik_ingress_check
+  retries: 10
+  delay: 3
+  until: adminvps_traefik_ingress_check.status in [200, 301, 302]
+
+# The directory provider replaced the single-file dynamic config.
+- name: Remove the retired single-file dynamic config
+  ansible.builtin.file:
+    path: "{{ adminvps_traefik_dir }}/dynamic.yml"
+    state: absent
+
+- name: Enable and start the failover timer
+  ansible.builtin.systemd:
+    name: traefik-ingress-failover.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Run one failover probe now
+  ansible.builtin.systemd:
+    name: traefik-ingress-failover.service
+    state: started
+  changed_when: false

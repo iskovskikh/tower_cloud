@@ -1,0 +1,43 @@
+---
+# wstunnel (WebSocket-over-TLS) fallback transport for the public ingress path.
+#
+# Additive and always-on: the primary Xray VLESS Reality + SSH reverse tunnel
+# keeps serving Traefik's 10443/12222 loopback ports. This transport publishes
+# the same targets on 10444/12223; the adminvps failover timer (role
+# adminvps_traefik) switches Traefik to them when the primary stops answering.
+#
+# Run (after ansible/playbooks/adminvps.yml, which installs the relay router,
+# TLS certificate and failover timer):
+#
+#   ansible-playbook ansible/playbooks/wstunnel-fallback.yml \
+#     -e @~/.wstunnel-vars.yml     # wstunnel_fallback_path_secret: <secret>
+#
+# The secret authenticates the client to the server (HTTP upgrade path prefix)
+# and is not stored in git.
+
+- name: archasus — fetch the pinned wstunnel release binary
+  hosts: archasus
+  gather_facts: false
+  tasks:
+    - name: Fetch and stage the wstunnel binary
+      ansible.builtin.import_role:
+        name: wstunnel_fallback
+        tasks_from: prefetch
+
+- name: adminvps — wstunnel fallback server
+  hosts: adminvps
+  become: true
+  tasks:
+    - name: Install the wstunnel server
+      ansible.builtin.import_role:
+        name: wstunnel_fallback
+        tasks_from: server
+
+- name: k8s-node-1 — wstunnel fallback client (reverse tunnels)
+  hosts: k8s-node-1
+  become: true
+  tasks:
+    - name: Install the wstunnel client
+      ansible.builtin.import_role:
+        name: wstunnel_fallback
+        tasks_from: client

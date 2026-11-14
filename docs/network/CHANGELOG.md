@@ -4,6 +4,40 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-14 — wstunnel (WSS) fallback transport + automatic Traefik switch
+
+- **Why:** public ingress had a single transport (Xray VLESS Reality + SSH
+  reverse tunnel). The provider already DPI-drops WireGuard and throttles
+  non-standard-port TLS and the `chrome` ClientHello, so a VLESS Reality block
+  would take the public sites down with no backup (ADR-0007).
+- **Fallback:** `k8s-node-1` now runs `wstunnel-fallback.service` (wstunnel
+  11.1.0 client) to `wss://relay.metoda.cc` with reverse tunnels
+  `127.0.0.1:10444 -> ingress-nginx` and `127.0.0.1:12223 -> GitLab shell` on
+  `adminvps`. `adminvps` runs `wstunnel-server.service` on `127.0.0.1:8080`
+  behind Traefik, which terminates a normal Let's Encrypt certificate for
+  `relay.metoda.cc` (wildcard DNS already covers it). The upgrade-path prefix
+  is a credential (out-of-band, not in git); the server restriction file allows
+  only the two loopback reverse binds.
+- **Switching:** `adminvps_traefik` now uses the file-provider directory
+  `/etc/traefik/conf.d` (`routers.yml` + `backend.yml`). A 30 s timer probes
+  `127.0.0.1:10443` (primary) and `:10444` (fallback) and, after two agreeing
+  probes, atomically swaps `backend.yml` between `backends/primary.yml` and
+  `backends/fallback.yml`; Traefik reloads without a restart. Primary wins when
+  healthy, so wstunnel is standby.
+- **IaC:** role `wstunnel_fallback` (server/client) + playbook
+  `ansible/playbooks/wstunnel-fallback.yml`; `adminvps_traefik` gained the relay
+  router, directory provider, `traefik-ingress-failover` script/service/timer,
+  and `curl`. ADR-0007.
+- **Verified:** fallback backend `127.0.0.1:10444` returns 200/302 for
+  `cloud.`/`auth.`; with the primary reverse tunnel stopped, the switch moved
+  Traefik to the fallback and public sites stayed 200/302; the primary
+  reconnected within ~10 s and the switch moved back. Public ingress was 200/302
+  on the primary before and after.
+- **Limitation:** the fallback shares `adminvps` (same IP) and the home uplink,
+  so it does not survive an IP-level block or a VPS outage.
+
+---
+
 ## 2026-11-14 — mwan3 conntrack flush covers tracking-only WAN failover
 
 - **Symptom/gap:** a provider outage usually leaves the link to the nearest ISP

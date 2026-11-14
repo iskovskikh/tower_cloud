@@ -9,6 +9,9 @@
 # Since 2026-11-13 the public path is: internet -> adminvps Traefik ->
 # 127.0.0.1:10443 (SSH reverse) -> Xray VLESS Reality -> k8s-node-1 ingress.
 # (WireGuard transport is dropped by the home provider's DPI.)
+# Since 2026-11-14 a wstunnel (WSS) standby reverse tunnel publishes the same
+# ingress on 127.0.0.1:10444; adminvps switches Traefik to it automatically
+# when the Xray transport dies (ADR-0007).
 #
 # Exit: 0 = healthy, 1 = at least one check failed. Safe for cron/systemd.
 #
@@ -54,6 +57,13 @@ if ssh -o BatchMode=yes -o ConnectTimeout=8 "$TUNNEL_SSH_HOST" \
     printf 'ok   %-22s %s\n' "xray tunnel" "active"
 else
     report_fail "xray tunnel services inactive on ${TUNNEL_SSH_HOST#*@}"
+fi
+
+if ssh -o BatchMode=yes -o ConnectTimeout=8 "$TUNNEL_SSH_HOST" \
+    'systemctl is-active --quiet wstunnel-fallback' 2>/dev/null; then
+    printf 'ok   %-22s %s\n' "wstunnel fallback" "active"
+else
+    report_fail "wstunnel fallback inactive on ${TUNNEL_SSH_HOST#*@}"
 fi
 
 if [ -n "${HEALTHCHECKS_PING_URL:-}" ]; then

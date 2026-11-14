@@ -1,0 +1,24 @@
+[Unit]
+Description=wstunnel fallback transport (WSS reverse tunnel to adminvps)
+Documentation=https://github.com/erebe/wstunnel
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ wstunnel_fallback_user }}
+Group={{ wstunnel_fallback_user }}
+Environment=HOME=/home/{{ wstunnel_fallback_user }}
+ExecStart={{ wstunnel_fallback_binary_dest }} client \
+    --http-upgrade-path-prefix {{ wstunnel_fallback_path_secret }} \
+    --tls-verify-certificate \
+    --websocket-ping-frequency 30s \
+    --reverse-tunnel-connection-retry-max-backoff 30s \
+    -R tcp://127.0.0.1:{{ wstunnel_fallback_remote_https_port }}:127.0.0.1:{{ wstunnel_fallback_home_https_port }} \
+    -R tcp://127.0.0.1:{{ wstunnel_fallback_remote_ssh_port }}:127.0.0.1:{{ wstunnel_fallback_home_ssh_port }} \
+    wss://{{ wstunnel_fallback_relay_host }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

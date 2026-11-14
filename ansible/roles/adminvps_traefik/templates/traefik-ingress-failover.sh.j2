@@ -1,0 +1,77 @@
+#!/bin/sh
+# Managed by Ansible (role adminvps_traefik) — do not edit by hand.
+#
+# Probe the two reverse-tunnel transports and point the live Traefik backend at
+# a healthy one. The primary (Xray/SSH, 10443) wins whenever it answers; the
+# wstunnel fallback (10444) is used while the primary is down. A switch only
+# happens after THRESHOLD consecutive probes agree, so a tunnel reconnecting
+# does not flap the backend. Traefik watches conf.d/ and reloads by itself.
+set -eu
+
+CONF={{ adminvps_traefik_dir }}/conf.d/backend.yml
+BACKENDS={{ adminvps_traefik_dir }}/backends
+STATE=/run/traefik-ingress-failover.state
+THRESHOLD={{ adminvps_traefik_failover_threshold }}
+
+probe() {
+    code=$(curl -sk --max-time 5 -o /dev/null -w '%{http_code}' \
+        "https://127.0.0.1:$1/" 2>/dev/null || true)
+    # Any HTTP status means the tunnel carried a complete request; 000 is a
+    # connect/TLS failure.
+    [ -n "$code" ] && [ "$code" != "000" ]
+}
+
+if probe {{ adminvps_traefik_primary_https_port }}; then
+    want=primary
+elif probe {{ adminvps_traefik_fallback_https_port }}; then
+    want=fallback
+else
+    logger -t traefik-ingress-failover "both transports unreachable; keeping current backend"
+    exit 0
+fi
+
+streak=0
+candidate=none
+if [ -r "$STATE" ]; then
+    # The first field is informational; the live file is authoritative for the
+    # current mode so a reboot (empty /run) or a manual edit cannot cause the
+    # script to overwrite a working fallback with a dead primary variant.
+    read -r _state_mode streak candidate < "$STATE" || true
+fi
+if cmp -s "$BACKENDS/primary.yml" "$CONF"; then
+    mode=primary
+elif cmp -s "$BACKENDS/fallback.yml" "$CONF"; then
+    mode=fallback
+else
+    # Missing/foreign live file: seed with the primary variant.
+    mode=primary
+fi
+
+if [ "$want" = "$mode" ]; then
+    streak=0
+    candidate=none
+elif [ "$want" = "$candidate" ]; then
+    streak=$((streak + 1))
+else
+    candidate=$want
+    streak=1
+fi
+
+if [ "$candidate" != "none" ] && [ "$streak" -ge "$THRESHOLD" ]; then
+    cp "$BACKENDS/$want.yml" "$CONF.new"
+    mv -f "$CONF.new" "$CONF"
+    logger -t traefik-ingress-failover "switched ingress backend: $mode -> $want"
+    mode=$want
+    streak=0
+    candidate=none
+fi
+
+# Keep the live file in sync with the current mode's variant even when the mode
+# does not change (e.g. an Ansible template/port update).
+if ! cmp -s "$BACKENDS/$mode.yml" "$CONF"; then
+    cp "$BACKENDS/$mode.yml" "$CONF.new"
+    mv -f "$CONF.new" "$CONF"
+    logger -t traefik-ingress-failover "refreshed ingress backend file for mode $mode"
+fi
+
+printf '%s %s %s\n' "$mode" "$streak" "$candidate" > "$STATE"

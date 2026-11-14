@@ -1,0 +1,32 @@
+---
+# Controller side: download and extract the pinned wstunnel release once, so
+# the server (adminvps) and client (k8s-node-1) get the exact same binary.
+
+- name: Fetch the wstunnel release tarball
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/erebe/wstunnel/releases/download/v{{ wstunnel_fallback_version
+      }}/wstunnel_{{ wstunnel_fallback_version }}_linux_amd64.tar.gz
+    dest: "/tmp/opencode/wstunnel_{{ wstunnel_fallback_version }}.tar.gz"
+    mode: "0644"
+    force: false
+
+- name: Create the extraction directory
+  ansible.builtin.file:
+    path: "/tmp/opencode/wstunnel_{{ wstunnel_fallback_version }}"
+    state: directory
+    mode: "0755"
+
+- name: Extract the wstunnel binary
+  ansible.builtin.unarchive:
+    src: "/tmp/opencode/wstunnel_{{ wstunnel_fallback_version }}.tar.gz"
+    dest: "/tmp/opencode/wstunnel_{{ wstunnel_fallback_version }}"
+    remote_src: true
+    creates: "/tmp/opencode/wstunnel_{{ wstunnel_fallback_version }}/wstunnel"
+
+- name: Stage the binary for the roles
+  ansible.builtin.copy:
+    src: "/tmp/opencode/wstunnel_{{ wstunnel_fallback_version }}/wstunnel"
+    dest: "{{ wstunnel_fallback_binary_src }}"
+    mode: "0755"
+    remote_src: true

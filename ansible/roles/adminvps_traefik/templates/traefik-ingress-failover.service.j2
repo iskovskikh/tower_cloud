@@ -1,0 +1,7 @@
+[Unit]
+Description=Probe and switch the Traefik ingress backend (Xray primary / wstunnel fallback)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/traefik-ingress-failover

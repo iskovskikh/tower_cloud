@@ -1,0 +1,54 @@
+---
+# k8s-node-1 — wstunnel client keeping reverse tunnels to adminvps over WSS.
+# It is an always-on standby; the primary Xray reverse tunnel keeps the
+# 10443/12222 loopback ports until it fails (see adminvps_traefik failover).
+
+- name: Require the wstunnel upgrade-path secret
+  ansible.builtin.assert:
+    that:
+      - wstunnel_fallback_path_secret | length >= 16
+    fail_msg: >-
+      wstunnel_fallback_path_secret is required (>=16 chars); pass it
+      out-of-band, e.g. -e @~/.wstunnel-vars.yml (it is a credential).
+
+- name: Install the wstunnel binary
+  ansible.builtin.copy:
+    src: "{{ wstunnel_fallback_binary_src }}"
+    dest: "{{ wstunnel_fallback_binary_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart wstunnel client
+
+- name: Install the wstunnel client service
+  ansible.builtin.template:
+    src: wstunnel-client.service.j2
+    dest: /etc/systemd/system/wstunnel-fallback.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart wstunnel client
+
+- name: Enable and start the wstunnel client
+  ansible.builtin.systemd:
+    name: wstunnel-fallback
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending restarts before verifying
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the client maintains the reverse tunnels on adminvps
+  ansible.builtin.command:
+    cmd: >-
+      ss -ltnH
+      '( sport = :{{ wstunnel_fallback_remote_https_port }}
+      or sport = :{{ wstunnel_fallback_remote_ssh_port }} )'
+  delegate_to: adminvps
+  become: true
+  register: wstunnel_fallback_listeners
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: wstunnel_fallback_listeners.stdout_lines | length >= 2

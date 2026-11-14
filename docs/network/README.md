@@ -59,6 +59,9 @@ Internet/ISP (CGNAT) ──── adminvps 78.17.99.16 (Traefik + Xray endpoint)
 External data path (front end **live**; domain **`metoda.cc`**):
 `Internet → adminvps:443 (**Traefik** + Let's Encrypt) → Xray VLESS Reality +
 SSH reverse tunnel → ingress-nginx (VLAN120) → k8s apps`.
+A **wstunnel (WSS) fallback** publishes the same ingress on `10444/12223`; a
+timer on `adminvps` switches Traefik to it if the Xray transport stops
+answering (ADR-0007).
 
 **DNS:** `metoda.cc` is delegated to Timeweb's nameservers (`ns1/2.timeweb.ru`,
 `ns3/4.timeweb.org`). Since 2026-10-19 the zone is visible to the Timeweb Cloud
@@ -107,7 +110,11 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
 - `36243` Xray VLESS Reality (direct fallback; normally reached through
   Traefik `:443`, which passes the `www.oracle.com` SNI through untouched)
 - `80`/`443` tcp **Traefik** (Let's Encrypt HTTP-01, Docker Compose) — fronts
-  `cloud.` / `auth.` / `hermes.` → home ingress-nginx over the Xray/SSH tunnel
+  `cloud.` / `auth.` / `hermes.` → home ingress-nginx over the Xray/SSH tunnel;
+  `relay.metoda.cc` + loopback `:8080` is the wstunnel fallback endpoint
+- loopback (not public) `10443`/`12222` = primary Xray reverse forwards;
+  `10444`/`12223` = wstunnel fallback reverse forwards; a timer swaps
+  `/etc/traefik/conf.d/backend.yml` between them
 - **2026-10-23 audit + hardening:** `adminvps` is the only public host. Role
   `adminvps_hardening` applied: key-only SSH (`PasswordAuthentication no`,
   `PermitRootLogin prohibit-password`), default-deny UFW with public
@@ -131,7 +138,10 @@ Full detail (services, MACs, notes): [`inventory.yaml`](inventory.yaml).
   is the public `auth.metoda.cc` (split-horizon → ingress-nginx internally);
   Hermes is public at `https://hermes.metoda.cc`
 - Public ingress reaches these through the Xray/SSH reverse tunnel from
-  `k8s-node-1`; `adminvps` has no direct route to the nodes.
+  `k8s-node-1`; `adminvps` has no direct route to the nodes. A second,
+  independent transport (`wstunnel-fallback`, WSS to `relay.metoda.cc`) is
+  always connected as a standby; `adminvps` switches Traefik to it when the
+  Xray path fails (ADR-0007).
 - `k8s-node-1` also exposes the Xray SOCKS proxy on `10.10.120.101:1081`
   (VLAN120 only) for in-cluster egress — Hermes' Telegram proxy uses it. The
   client uses the `firefox` TLS fingerprint: `chrome` sends a larger

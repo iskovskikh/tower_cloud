@@ -1,0 +1,25 @@
+# Managed by Ansible (role adminvps_traefik) — do not edit by hand.
+# Live backend selection for the public ingress. The failover timer overwrites
+# conf.d/backend.yml atomically with either backends/primary.yml (Xray tunnel)
+# or backends/fallback.yml (wstunnel); Traefik's file provider reloads it.
+
+http:
+  services:
+    # All public hosts share the home ingress-nginx entry points; the Host
+    # header (passHostHeader defaults to true) selects the k8s Ingress.
+    ingress:
+      loadBalancer:
+        serversTransport: k8s-insecure
+        servers:
+{% for server in backend_ingress_servers %}
+          - url: "{{ server }}"
+{% endfor %}
+
+tcp:
+  services:
+    gitlab-ssh:
+      loadBalancer:
+        servers:
+{% for server in backend_gitlab_ssh_servers %}
+          - address: "{{ server }}"
+{% endfor %}

@@ -1,9 +1,10 @@
 ---
-# adminvps — public front end (ADR-0003, superseded by ADR-0006): Traefik
+# adminvps — public front end (ADR-0003, superseded by ADR-0006/0007): Traefik
 # terminates public TLS with Let's Encrypt (HTTP-01) and re-encrypts to the
-# home ingress-nginx over the Xray VLESS Reality + SSH reverse tunnel. Traefik
-# runs as a Docker Compose service (the VPS had no Docker before this role).
-# See ADR-0003 / ADR-0004 / ADR-0006.
+# home ingress-nginx over the Xray VLESS Reality + SSH reverse tunnel, with a
+# wstunnel (WSS) reverse tunnel as the fallback transport. Traefik runs as a
+# Docker Compose service (the VPS had no Docker before this role).
+# See ADR-0003 / ADR-0004 / ADR-0006 / ADR-0007.
 
 adminvps_traefik_dir: /etc/traefik
 adminvps_traefik_image: "traefik:v3.7.14"
@@ -26,19 +27,34 @@ adminvps_traefik_hosts:
 # certificate is not trusted on the VPS, so verification is skipped (the tunnel
 # is already encrypted).
 #
-# The home provider blocks the WireGuard transport (DPI), so the backends are
-# reached over the **Xray VLESS Reality + SSH reverse tunnel** from k8s-node-1
-# (role xray_tunnel). WireGuard was retired 2026-11-14; there is no WG fallback.
-# The SSH reverse forwards bind these loopback ports on adminvps:
-adminvps_traefik_ingress_servers:
-  - https://127.0.0.1:10443
-
-# GitLab SSH (gitlab-shell) is NodePort 30222 on every k8s node; Traefik exposes
-# it publicly on the same port 30222 (adminvps :22 belongs to the admin sshd).
-# Clone URLs are ssh://git@gitlab.metoda.cc:30222/... (or Port 30222 in
-# ~/.ssh/config).
-adminvps_traefik_gitlab_ssh_servers:
+# Two transports can publish the ingress on adminvps loopback:
+#   * primary  — Xray VLESS Reality + SSH reverse tunnel (role xray_tunnel)
+#                binds 10443 (HTTPS) / 12222 (GitLab SSH);
+#   * fallback — wstunnel over WebSocket/TLS (role wstunnel_fallback) binds
+#                10444 / 12223, used when VLESS Reality is DPI-blocked.
+# A systemd timer probes the primary ports and rewrites `conf.d/backend.yml`
+# atomically, so Traefik follows the healthy transport without a restart.
+adminvps_traefik_primary_https_port: 10443
+adminvps_traefik_fallback_https_port: 10444
+adminvps_traefik_primary_ingress_servers:
+  - "https://127.0.0.1:{{ adminvps_traefik_primary_https_port }}"
+adminvps_traefik_primary_gitlab_ssh_servers:
   - 127.0.0.1:12222
+adminvps_traefik_fallback_ingress_servers:
+  - "https://127.0.0.1:{{ adminvps_traefik_fallback_https_port }}"
+adminvps_traefik_fallback_gitlab_ssh_servers:
+  - 127.0.0.1:12223
+
+# Failover probe. Switch only after N consecutive checks agree, to avoid
+# flapping while a reverse tunnel reconnects.
+adminvps_traefik_failover_interval: 30
+adminvps_traefik_failover_threshold: 2
+
+# wstunnel server behind Traefik. `relay.metoda.cc` already resolves to this
+# VPS via the `*.metoda.cc` A record; Traefik terminates TLS and forwards plain
+# WebSocket to the loopback server. Keep in sync with role wstunnel_fallback.
+adminvps_traefik_relay_host: relay.metoda.cc
+adminvps_traefik_relay_backend: http://127.0.0.1:8080
 
 # The home provider throttles TLS on non-standard ports, so the Xray VLESS
 # Reality transport also runs on public :443. Traefik peeks the TLS SNI and

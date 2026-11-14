@@ -1,0 +1,22 @@
+[Unit]
+Description=wstunnel server (public ingress fallback transport)
+Documentation=https://github.com/erebe/wstunnel
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart={{ wstunnel_fallback_binary_dest }} server \
+    --restrict-config {{ wstunnel_fallback_server_conf_dir }}/restrictions.yaml \
+    --remote-to-local-server-idle-timeout {{ wstunnel_fallback_server_idle_timeout }} \
+    ws://{{ wstunnel_fallback_server_bind }}
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
