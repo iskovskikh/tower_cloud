@@ -4,6 +4,32 @@ One entry per recon session or infrastructure change. Newest first.
 
 ---
 
+## 2026-11-14 — Hermes agent SSH access to archasus
+
+- **Why:** the Hermes agent (ns `hermes`) needs to run ops commands on the
+  workstation (repo, `kubectl`/`flux`, docker, `scripts/recon.sh`). archasus had
+  `sshd` **disabled** and **no host keys**, so the pod could reach the LAN but
+  not log in.
+- **Host:** generated host keys (`ssh-keygen -A`) and enabled/started `sshd` on
+  archasus. Reproducible with `ansible/playbooks/archasus-ssh.yml` (`-K` for
+  become). Added a dedicated ed25519 key for Hermes: private key + pinned
+  host key in Vault `secret/hermes` (`archasus_ssh_key`,
+  `archasus_ssh_known_hosts`); `authorized_keys` restricts it with
+  `from="10.10.120.0/24,192.168.1.216",no-agent-forwarding,no-port-forwarding,no-X11-forwarding`.
+- **Cluster:** new ESO `ExternalSecret hermes-ssh` (separate from
+  `hermes-secrets`, so the key is never an env var) and `ConfigMap
+  hermes-ssh-config` (`Host archasus` → 192.168.1.204, user `arch`). The
+  `ssh-perms` init container copies the projected secret into an emptyDir
+  mounted at `/opt/data/.ssh`, chowns it to the image's `hermes` user (UID
+  10000) and sets `0600`, because OpenSSH rejects group/world-readable keys.
+- **Verified:** from the pod as `hermes`, `ssh archasus` returns
+  `arch@archasus` (kernel 7.2.11); `SSH_CLIENT` is `192.168.1.216`, matching the
+  `from=` allowlist. LAN path from the pod works (NAT via the Keenetic).
+- **Note:** the k8s manifests are committed to Git so Flux keeps them; the
+  private key is only in Vault.
+
+---
+
 ## 2026-11-14 — wstunnel (WSS) fallback transport + automatic Traefik switch
 
 - **Why:** public ingress had a single transport (Xray VLESS Reality + SSH

@@ -1,7 +1,7 @@
 # tower_cloud / network inventory
 # Machine-readable source of truth. Keep this file in sync with reality.
 # Re-generate/verify with: scripts/recon.sh
-# Last verified: 2026-11-13 (see CHANGELOG.md)
+# Last verified: 2026-11-14 (see CHANGELOG.md)
 
 meta:
   site: home
@@ -134,14 +134,24 @@ hosts:
     ips:
       lan: [192.168.1.204, 192.168.1.205]   # TWO IPv4 leases on one NIC — anomaly, see CHANGELOG
     mac: "fc:9d:05:72:97:da"
-    os: Arch Linux (kernel 7.2.7-arch1-1)
+    os: Arch Linux (kernel 7.2.11-arch1-1)
     hardware: MSI MS-7D98, 1 GbE (enp3s0)
     notes: >
       This recon host. Docker host (containers: alisa-web, openwebui, postgres, ...).
       Local dev proxies: hiddify (SOCKS), ssh -D dynamic tunnel, ollama via ssh forward.
       (NFS client mount of tower:/srv/nfs/datasets was removed 2026-10-12.)
+      2026-11-14: sshd was disabled and had no host keys; enabled (host keys
+      generated, service enabled+started) so the **Hermes agent** (ns `hermes`)
+      can run ops commands here. Dedicated ed25519 key lives in Vault
+      `secret/hermes` (`archasus_ssh_key` + `archasus_ssh_known_hosts`), mounted
+      by `k8s/apps/hermes`; `authorized_keys` restricts it with
+      `from="10.10.120.0/24,192.168.1.216"` + no agent/port/X11 forwarding.
+      Cluster egress is NATed by the Keenetic, so Hermes appears as
+      `192.168.1.216`. Reproducible via `ansible/playbooks/archasus-ssh.yml`.
+    services:
+      - {port: 22, proto: tcp, service: "sshd (key-only; Hermes agent key from Vault)"}
     services_localhost_only: [1080, 12334, 12336, 12337, 30000, 63342]
-    access: "local"
+    access: "local; ssh arch@192.168.1.204 (Hermes key: Vault secret/hermes)"
 
   - id: tower
     role: nas-media-server

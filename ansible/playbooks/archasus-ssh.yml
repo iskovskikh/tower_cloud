@@ -1,0 +1,52 @@
+# archasus — SSH access for the Hermes agent (ns `hermes`).
+#
+# archasus is the Ansible controller and the ops workstation. sshd was disabled
+# and had no host keys until 2026-11-14, when the Hermes pod needed to run
+# read/ops commands here. The private key lives in Vault `secret/hermes`
+# (`archasus_ssh_key`) and is mounted into the pod by k8s/apps/hermes.
+#
+# Run it with the become password (sshd/host keys/authorized_keys are root):
+#   ansible-playbook ansible/playbooks/archasus-ssh.yml -K
+#
+# The source address seen by archasus is the Keenetic WAN (192.168.1.216),
+# because cluster egress is NATed there; the cluster subnet is allowed too.
+- name: archasus — SSH access for Hermes
+  hosts: archasus
+  become: true
+  vars:
+    archasus_hermes_pubkey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFxafbXxk18mXzmjX0UwI7pvPhl22qJWygnt0lLbExK6 hermes-agent@tower-cloud'
+    archasus_hermes_key_options: 'from="10.10.120.0/24,192.168.1.216",no-agent-forwarding,no-port-forwarding,no-X11-forwarding'
+  tasks:
+    - name: Install OpenSSH (idempotent)
+      command: pacman -S --needed --noconfirm openssh
+      args:
+        creates: /usr/bin/sshd
+
+    - name: Generate missing host keys
+      command: ssh-keygen -A
+      args:
+        creates: /etc/ssh/ssh_host_ed25519_key
+
+    - name: Enable and start sshd
+      systemd:
+        name: sshd
+        enabled: true
+        state: started
+
+    - name: Authorize the Hermes key for the ops user
+      lineinfile:
+        path: /home/arch/.ssh/authorized_keys
+        create: true
+        owner: arch
+        group: arch
+        mode: "0600"
+        regexp: 'hermes-agent@tower-cloud\s*$'
+        line: "{{ archasus_hermes_key_options }} {{ archasus_hermes_pubkey }}"
+
+    - name: Ensure the .ssh directory has safe permissions
+      file:
+        path: /home/arch/.ssh
+        state: directory
+        owner: arch
+        group: arch
+        mode: "0700"

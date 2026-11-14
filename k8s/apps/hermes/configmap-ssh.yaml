@@ -1,0 +1,18 @@
+# SSH client config copied into /opt/data/.ssh by the ssh-perms init container.
+# The source IP seen by archasus is the Keenetic WAN (192.168.1.216), which the
+# authorized_keys `from=` restriction allows.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-ssh-config
+  namespace: hermes
+data:
+  config: |
+    Host archasus 192.168.1.204 192.168.1.205
+        HostName 192.168.1.204
+        User arch
+        IdentityFile ~/.ssh/id_ed25519
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+        UserKnownHostsFile ~/.ssh/known_hosts
+        ServerAliveInterval 30

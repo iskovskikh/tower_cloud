@@ -43,6 +43,27 @@ spec:
               readOnly: true
             - name: ca-bundle
               mountPath: /ca-bundle
+        # The SSH key/known_hosts arrive root-owned from the Secret volume.
+        # Copy them to an emptyDir owned by the hermes user (UID 10000) so
+        # OpenSSH accepts the private key (it rejects group/world-readable
+        # keys) and the dashboard/gateway can read them.
+        - name: ssh-perms
+          image: nousresearch/hermes-agent:v0.22.5
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cp -a /ssh-src/. /ssh-home/
+              chown -R 10000:10000 /ssh-home
+              chmod 700 /ssh-home
+              chmod 600 /ssh-home/id_ed25519
+              chmod 644 /ssh-home/known_hosts /ssh-home/config
+          volumeMounts:
+            - name: ssh-src
+              mountPath: /ssh-src
+              readOnly: true
+            - name: ssh
+              mountPath: /ssh-home
       containers:
         - name: hermes
           image: nousresearch/hermes-agent:v0.22.5
@@ -88,6 +109,8 @@ spec:
             - name: ca-bundle
               mountPath: /ca-bundle
               readOnly: true
+            - name: ssh
+              mountPath: /opt/data/.ssh
           readinessProbe:
             httpGet:
               path: /api/status
@@ -122,4 +145,22 @@ spec:
               - key: ca.crt
                 path: ca.crt
         - name: ca-bundle
+          emptyDir: {}
+        - name: ssh-src
+          projected:
+            defaultMode: 0400
+            sources:
+              - secret:
+                  name: hermes-ssh
+                  items:
+                    - key: id_ed25519
+                      path: id_ed25519
+                    - key: known_hosts
+                      path: known_hosts
+              - configMap:
+                  name: hermes-ssh-config
+                  items:
+                    - key: config
+                      path: config
+        - name: ssh
           emptyDir: {}
